@@ -213,8 +213,8 @@ print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task1_masks
 task1_model.reinitialize_hebbian_parameters(init_type='normal')
 
 print("### Task 2 ###")
-for i in range(20):
-        task2_indices, task2_masks, task2_model, optimizer = forwardprop_and_backprop(task1_model,0.1, data_loader_2, list_of_indexes=list_of_indexes, masks=masks, continual=True, optimizer=None, scheduler=scheduler)
+for i in range(10):
+        task2_indices, task2_masks, task2_model, optimizer = forwardprop_and_backprop(task1_model,0.1, data_loader_2, list_of_indexes=indices, masks=new_masks, continual=True, optimizer=None, scheduler=scheduler)
     # print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
     # print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))
 
