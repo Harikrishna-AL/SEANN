@@ -8,7 +8,20 @@ from torch.optim.lr_scheduler import StepLR
 
 
 class NN(nn.Module):
+    """
+    Neural network class with Hebbian learning mechanisms.
+    """
+
     def __init__(self, input_size, output_size, indexes):
+        """
+        Initializes the network layers, Hebbian parameters, and hooks for gradient freezing.
+
+        Args:
+            input_size (int): Size of the input layer.
+            output_size (int): Size of the output layer.
+            indexes (list): List of neuron indices to freeze during gradient updates.
+        """
+
         super(NN, self).__init__()
 
         self.k = 5
@@ -37,15 +50,21 @@ class NN(nn.Module):
 
         self._register_gradient_hooks(self.indexes)
 
-    def _register_gradient_hooks(self, indexes):
-        layers = [self.linear1, self.linear2, self.linear3]
-        for i, layer in enumerate(layers):
-            # Check if the layer already has hooks registered and clear them if they exist
-            if layer.weight._backward_hooks is not None:
-                layer.weight._backward_hooks.clear()
-            layer.weight.register_hook(self.freeze_grad(indexes[i]))
-
     def forward(self, x, indexes=None, masks=None):
+        """
+        Defines the forward pass of the network.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+            indexes (list, optional): New indexes to update for freezing gradients.
+            masks (list, optional): Masking values applied to specific layers during forward pass.
+
+        Returns:
+            torch.Tensor: Output tensor.
+            list: Hebbian scores for each layer.
+            list: Hebbian masks for each layer.
+        """
+
         if indexes is not None:
             self.update_indexes(indexes)
 
@@ -67,6 +86,20 @@ class NN(nn.Module):
         return x, hebbian_scores, hebbian_masks
 
     def hebbian_update(self, x, layer_idx, lr=1, threshold=0.5):
+        """
+        Updates Hebbian parameters based on Hebbian learning principles.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+            layer_idx (int): Index of the current layer in the Hebbian parameter list.
+            lr (float, optional): Learning rate for Hebbian updates.
+            threshold (float, optional): Threshold for Hebbian score masking.
+
+        Returns:
+            torch.Tensor: Indices of neurons with Hebbian scores below the threshold.
+            torch.Tensor: Mask tensor for the layer based on Hebbian scores.
+        """
+
         heb_param = self.hebb_params[layer_idx]
         x_size = self.hidden_size_array[layer_idx]
 
@@ -93,6 +126,16 @@ class NN(nn.Module):
         return hebbian_score_indices, hebbian_mask
 
     def freeze_grad(self, indexes):
+        """
+        Freezes gradients for neurons specified by indexes.
+
+        Args:
+            indexes (list): List of neuron indices to freeze during gradient updates.
+
+        Returns:
+            function: Hook function for modifying gradients during backpropagation.
+        """
+
         def hook(grad):
             if len(indexes) > 0:
                 indexes_arr = (
@@ -105,11 +148,40 @@ class NN(nn.Module):
 
         return hook
 
+    def _register_gradient_hooks(self, indexes):
+        """
+        Registers hooks for freezing gradients on specified neurons.
+
+        Args:
+            indexes (list): List of neuron indices to freeze during gradient updates.
+        """
+
+        layers = [self.linear1, self.linear2, self.linear3]
+        for i, layer in enumerate(layers):
+            # Check if the layer already has hooks registered and clear them if they exist
+            if layer.weight._backward_hooks is not None:
+                layer.weight._backward_hooks.clear()
+            layer.weight.register_hook(self.freeze_grad(indexes[i]))
+
     def update_indexes(self, new_indexes):
+        """
+        Updates the indexes of neurons for freezing and re-registers gradient hooks.
+
+        Args:
+            new_indexes (list): New list of neuron indexes to freeze.
+        """
+
         self.indexes = new_indexes
         self._register_gradient_hooks(new_indexes)
 
     def reinitialize_hebbian_parameters(self, init_type="zero"):
+        """
+        Reinitializes the Hebbian parameters.
+
+        Args:
+            init_type (str, optional): Initialization type ('zero' or 'normal').
+        """
+
         for param in self.hebb_params.parameters():
             if init_type == "zero":
                 nn.init.constant_(param, 0)
