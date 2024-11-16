@@ -116,3 +116,32 @@ for data, target in test_loader_2:
 
 print(f"Accuracy for Task 2: {100* correct/len(test_loader_2.dataset)}%")
 accuracies.append(100 * correct / len(test_loader_2.dataset))
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
+model_weights = task1_model.linear1.weight.data.cpu().numpy()
+
+model_neurons = np.random.choice(len(task2_indices[0]), 20)
+#select random 20 neurons
+neurons = np.random.choice(256, 20)
+plt.figure(figsize=(20, 10))
+for i, neuron in enumerate(neurons):
+    plt.subplot(4, 5, i + 1)
+    plt.imshow(hebbian_weights[neuron].reshape(28, 28), cmap="gray")
+    plt.axis("off")
+
+plt.show()
+
+plt.figure(figsize=(20, 10))
+for i, neuron in enumerate(model_neurons):
+    idx = task2_indices[0][neuron]
+    print(idx)
+    plt.subplot(4, 5, i + 1)
+    plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
+    plt.axis("off")
+
+plt.show()
+

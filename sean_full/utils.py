@@ -116,11 +116,11 @@ def forwardprop_and_backprop(
         data = data.view(-1, 784)
         data, target = data.to(device), target.to(device)
         if not continual:
-            output, list_of_indexes_out, masks = model(
+            output, list_of_indexes, masks = model(
                 data, indexes=list_of_indexes, masks=masks
             )
-            if i == len(data_loader) - 1:
-                list_of_indexes = list_of_indexes_out
+            # if i == len(data_loader) - 1:
+            #     list_of_indexes = list_of_indexes_out
 
         else:
 
