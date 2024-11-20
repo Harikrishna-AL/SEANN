@@ -116,17 +116,27 @@ def forwardprop_and_backprop(
         data = data.view(-1, 784)
         data, target = data.to(device), target.to(device)
         if not continual:
-            output, list_of_indexes, masks = model(
+            _, list_of_indexes, masks = model.hebb_forward(data)
+
+            output = model(
                 data, indexes=list_of_indexes, masks=masks
             )
+            
             # if i == len(data_loader) - 1:
             #     list_of_indexes = list_of_indexes_out
 
         else:
+            _, list_of_indexes_out, masks = model.hebb_forward(data, indexes=list_of_indexes)
+            
+            # list_of_indexes_out = get_excess_neurons(list_of_indexes, list_of_indexes_out)
+            # masks_out = get_merge_mask(masks, masks_out)
 
-            output, list_of_indexes_out, masks_out = model(
-                data, indexes=list_of_indexes, masks=masks
+            output = model(
+                data, indexes=list_of_indexes_out, masks=masks
             )
+            if i == len(data_loader) - 1:
+                list_of_indexes = list_of_indexes_out
+                
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
