@@ -99,7 +99,7 @@ print("### Testing Task 1###")
 for data, target in test_loader_1:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
-    output = task1_model(data, masks=task1_masks)
+    output, scalers, indices, masks = task1_model(data, masks=task1_masks)
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
     correct += predicted.eq(target.view_as(predicted)).sum().item()
@@ -112,7 +112,7 @@ print("### Testing Task 2###")
 for data, target in test_loader_2:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
-    output = task2_model(data, masks=task2_masks)
+    output, scalers, indices, masks = task2_model(data, masks=task2_masks)
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
     correct += predicted.eq(target.view_as(predicted)).sum().item()
@@ -124,26 +124,28 @@ accuracies.append(100 * correct / len(test_loader_2.dataset))
 import matplotlib.pyplot as plt
 import numpy as np
 
-hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
+# hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
 model_weights = task1_model.linear[0].weight.data.cpu().numpy()
 
 model_neurons = np.random.choice(len(task2_indices[0]), 20)
-#select random 20 neurons
+# select random 20 neurons
 neurons = np.random.choice(256, 20)
-plt.figure(figsize=(20, 10))
-for i, neuron in enumerate(neurons):
-    plt.subplot(4, 5, i + 1)
-    plt.imshow(hebbian_weights[neuron].reshape(28, 28), cmap="gray")
-    plt.axis("off")
 
-plt.show()
+
+# plt.figure(figsize=(20, 10))
+# for i, neuron in enumerate(neurons):
+#     plt.subplot(4, 5, i + 1)
+#     plt.imshow(hebbian_weights[neuron].reshape(28, 28), cmap="gray")
+#     plt.axis("off")
+
+# plt.show()
 
 plt.figure(figsize=(20, 10))
 for i, neuron in enumerate(model_neurons):
-    idx = task2_indices[0][neuron]
+    idx = neuron
+    # idx = task2_indices[0][neuron]
     plt.subplot(4, 5, i + 1)
-    plt.imshow(model_weights[idx].reshape(28,28), cmap="gray")
+    plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
     plt.axis("off")
 
 plt.show()
-
