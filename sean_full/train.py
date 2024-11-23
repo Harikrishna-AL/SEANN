@@ -15,7 +15,7 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 760  # verified
+seed = 500  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -25,12 +25,13 @@ torch.cuda.manual_seed_all(seed)
 data_loader_1, data_loader_2, test_loader_1, test_loader_2 = get_data_separate(
     batch_size=64
 )
-list_of_indexes = [[], [], []]
+list_of_indexes = [[], [], [],[]]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 masks = [
     torch.ones(256).to(device),
     torch.ones(128).to(device),
     torch.ones(64).to(device),
+    torch.ones(10).to(device),
 ]
 
 
@@ -52,7 +53,7 @@ for i in range(10):
 
 indices = []
 new_masks = []
-layer_sizes = [256, 128, 64]
+layer_sizes = [256, 128, 64, 10]
 for i in range(len(layer_sizes)):
     indices.append(
         torch.tensor(
@@ -83,12 +84,14 @@ for i in range(10):
         continual=True,
         optimizer=None,
         scheduler=scheduler,
+        indices_old=indices
     )
 # print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
 # print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))
 
 print("Task 2 indices: ", task2_indices)
 print("Task 2 masks: ", task2_masks)
+print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
 
 # test
 # forwardprop_and_backprop(original_model, test_loader, list_of_indexes=list_of_indexes)
@@ -125,9 +128,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
-model_weights = task1_model.linear[0].weight.data.cpu().numpy()
+model_weights = task2_model.linear[0].weight.data.cpu().numpy()
+model_weights1 = task2_model.linear[1].weight.data.cpu().numpy()
 
-model_neurons = np.random.choice(len(task2_indices[0]), 20)
+model_neurons = np.random.choice(256, 20)
+model_neurons1 = np.random.choice(128, 20)
 # select random 20 neurons
 neurons = np.random.choice(256, 20)
 
@@ -146,6 +151,16 @@ for i, neuron in enumerate(model_neurons):
     # idx = task2_indices[0][neuron]
     plt.subplot(4, 5, i + 1)
     plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
+    plt.axis("off")
+
+plt.show()
+
+plt.figure(figsize=(20, 10))
+for i, neuron in enumerate(model_neurons1):
+    idx = neuron
+    # idx = task2_indices[1][neuron]
+    plt.subplot(4, 5, i + 1)
+    plt.imshow(model_weights1[idx].reshape(16, 16), cmap="gray")
     plt.axis("off")
 
 plt.show()
