@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate
+from data import get_data_separate_cifar_10 as get_data_separate
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
@@ -25,16 +25,17 @@ torch.cuda.manual_seed_all(seed)
 data_loader_1, data_loader_2, test_loader_1, test_loader_2 = get_data_separate(
     batch_size=64
 )
-list_of_indexes = [[], [], []]
+list_of_indexes = [[], [], [], []]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 masks = [
+    torch.ones(512).to(device),
     torch.ones(256).to(device),
     torch.ones(128).to(device),
     torch.ones(64).to(device),
 ]
 
 
-original_model = NN(784, 10, indexes=list_of_indexes).to(device)
+original_model = NN(32*32, 10, indexes=list_of_indexes).to(device)
 optimizer = optim.SGD(original_model.parameters(), lr=0.01, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 for i in range(10):
@@ -52,7 +53,7 @@ for i in range(10):
 
 indices = []
 new_masks = []
-layer_sizes = [256, 128, 64]
+layer_sizes = [512, 256, 128, 64]
 for i in range(len(layer_sizes)):
     indices.append(
         torch.tensor(
@@ -97,7 +98,7 @@ accuracies = []
 original_model.eval()
 print("### Testing Task 1###")
 for data, target in test_loader_1:
-    data = data.view(-1, 784)
+    data = data.view(-1, 32*32)
     data, target = data.to(device), target.to(device)
     output, scalers, indices, masks = task1_model(data, masks=task1_masks)
     # check the accuracy
@@ -110,7 +111,7 @@ accuracies.append(100 * correct / len(test_loader_1.dataset))
 correct = 0
 print("### Testing Task 2###")
 for data, target in test_loader_2:
-    data = data.view(-1, 784)
+    data = data.view(-1, 32*32)
     data, target = data.to(device), target.to(device)
     output, scalers, indices, masks = task2_model(data, masks=task2_masks)
     # check the accuracy
@@ -129,7 +130,7 @@ model_weights = task1_model.linear[0].weight.data.cpu().numpy()
 
 model_neurons = np.random.choice(len(task2_indices[0]), 20)
 # select random 20 neurons
-neurons = np.random.choice(256, 20)
+neurons = np.random.choice(512, 20)
 
 
 # plt.figure(figsize=(20, 10))
@@ -145,7 +146,7 @@ for i, neuron in enumerate(model_neurons):
     idx = neuron
     # idx = task2_indices[0][neuron]
     plt.subplot(4, 5, i + 1)
-    plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
+    plt.imshow(model_weights[idx].reshape(32, 32), cmap="gray")
     plt.axis("off")
 
 plt.show()

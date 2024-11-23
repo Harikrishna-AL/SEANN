@@ -29,7 +29,8 @@ class NN(nn.Module):
 
         self.linear = nn.ModuleList(
             [
-                nn.Linear(input_size, 256),
+                nn.Linear(input_size, 512),
+                nn.Linear(512, 256),
                 nn.Linear(256, 128),
                 nn.Linear(128, 64),
                 nn.Linear(64, output_size),
@@ -39,7 +40,8 @@ class NN(nn.Module):
         # Define the Hebbian parameters corresponding to each layer
         self.hebb_params = nn.ModuleList(
             [
-                nn.Linear(input_size, 256, bias=False),
+                nn.Linear(input_size, 512, bias=False),
+                nn.Linear(512, 256, bias=False),
                 nn.Linear(256, 128, bias=False),
                 nn.Linear(128, 64, bias=False),
                 nn.Linear(64, output_size, bias=False),
@@ -51,9 +53,9 @@ class NN(nn.Module):
             heb_param.weight.requires_grad = False
 
         self.indexes = indexes
-        self.hidden_size_array = [256, 128, 64, output_size]
+        self.hidden_size_array = [512, 256, 128, 64, output_size]
 
-        if indexes != [[], [], []]:
+        if indexes != [[], [], [], []]:
             self._register_gradient_hooks(self.indexes)
 
     def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None):

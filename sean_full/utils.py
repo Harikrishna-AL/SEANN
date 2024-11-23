@@ -3,7 +3,7 @@ from tqdm import tqdm
 from torch import nn, optim
 
 
-def get_excess_neurons(indices1, indices2, layer_sizes=[256, 128, 64]):
+def get_excess_neurons(indices1, indices2, layer_sizes=[512, 256, 128, 64]):
     """
     Identifies neurons in each layer that are present in indices2 but not in indices1.
 
@@ -113,7 +113,7 @@ def forwardprop_and_backprop(
 
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        data = data.view(-1, 784)
+        data = data.view(-1, 32*32)
         data, target = data.to(device), target.to(device)
         scalers = None
         if not continual:
