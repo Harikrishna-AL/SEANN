@@ -26,7 +26,7 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.3
+        self.percent_winner = 0.5
 
         self.linear = nn.ModuleList(
             [
@@ -197,7 +197,7 @@ class NN(nn.Module):
         scale[winner_idx] = delta_w[winner_idx]
         # scale values between 0 and 1
         scale = (scale - torch.min(scale)) / (
-            torch.max(scale) - torch.min(scale) + 1e-8
+            torch.max(scale) - torch.min(scale)
         )
 
         indices = sort[int(x_size * self.percent_winner) : -1]

@@ -111,15 +111,15 @@ def forwardprop_and_backprop(
 
     loss_total = 0
     model.train()
-
+    scalers = None
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        data = data.view(-1, 784)
+        data = data.view(-1, 32*32)
+        # print(data.shape, target.shape)
         data, target = data.to(device), target.to(device)
-        scalers = None
+        
         one_hot_target = torch.zeros(target.size(0), 10).to(device)
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
-
         if not continual:
             if scalers is not None:
                 output, scalers, list_of_indexes, masks = model(
@@ -136,6 +136,7 @@ def forwardprop_and_backprop(
 
             output, scalers, list_of_indexes, masks = model(
                 data,
+                scalers,
                 indexes=list_of_indexes,
                 masks=masks,
                 indices_old=indices_old,
@@ -149,6 +150,7 @@ def forwardprop_and_backprop(
         loss.backward()
         optimizer.step()
         loss_total += loss.item()
+    print("scalers", scalers)
 
     scheduler.step()
 
