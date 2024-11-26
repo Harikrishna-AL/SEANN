@@ -153,6 +153,6 @@ def forwardprop_and_backprop(
     print("scalers", scalers)
 
     scheduler.step()
-
+    # print("scaler", scalers)
     print("Avg loss: ", loss_total / len(data_loader))
     return list_of_indexes, masks, model, optimizer

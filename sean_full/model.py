@@ -178,6 +178,8 @@ class NN(nn.Module):
         delta_w = lr * (
             torch.sum(outer_product, dim=0) - heb_param.weight.data * theta.T
         )
+        #normalize the delta_w
+        delta_w = (delta_w - torch.min(delta_w)) / (torch.max(delta_w) - torch.min(delta_w) + 1e-8)
 
         y_mean = torch.mean(y, dim=0)
 
@@ -185,6 +187,7 @@ class NN(nn.Module):
         if indices_old is not None:
             # remove the neurons that were selected in the previous iteration
             y_mean[indices_old] = -1 * torch.inf
+            sort = torch.argsort(y_mean, descending=True)
             winner_idx = sort[: int(x_size * self.percent_winner)]
         else:
             winner_idx = sort[: int(x_size * self.percent_winner)]
@@ -194,7 +197,9 @@ class NN(nn.Module):
 
         # update the weights of the gd layer by moving the weights in the direction of the hebbian weights
         scale = torch.zeros_like(gd_layer.weight.data)
+
         scale[winner_idx] = delta_w[winner_idx]
+ 
         # scale values between 0 and 1
         scale = (scale - torch.min(scale)) / (
             torch.max(scale) - torch.min(scale)
