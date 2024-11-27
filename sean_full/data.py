@@ -1,7 +1,6 @@
 import torchvision
 import torch
-from torchvision import transforms
-
+from torchvision import transforms, datasets
 
 # import NMIST data
 def get_data(batch_size=128):
@@ -209,7 +208,7 @@ def get_data_separate_cifar_10(batch_size=128):
 
 
 
-def get_data_separate_dynamic(label_groups, batch_size=128):
+def get_data_separate_dynamic(label_groups, batch_size=128, type="mnist"):
     """
     Create dataloaders for CIFAR-10 data split into dynamic label groups.
 
@@ -220,21 +219,36 @@ def get_data_separate_dynamic(label_groups, batch_size=128):
     Returns:
         tuple: Two lists - train dataloaders and test dataloaders.
     """
-    transforms = torchvision.transforms.Compose(
-        [torchvision.transforms.ToTensor(), torchvision.transforms.Grayscale(num_output_channels=1)]
-    )
-    train_data = torchvision.datasets.CIFAR10(
-        root="./data",
-        train=True,
-        download=True,
-        transform=transforms,
-    )
-    test_data = torchvision.datasets.CIFAR10(
-        root="./data",
-        train=False,
-        download=True,
-        transform=transforms,
-    )
+    if type=="cifar10":
+        transforms = torchvision.transforms.Compose(
+            [torchvision.transforms.ToTensor(), torchvision.transforms.Grayscale(num_output_channels=1)]
+        )
+        train_data = torchvision.datasets.CIFAR10(
+            root="./data",
+            train=True,
+            download=True,
+            transform=transforms,
+        )
+        test_data = torchvision.datasets.CIFAR10(
+            root="./data",
+            train=False,
+            download=True,
+            transform=transforms,
+        )
+    elif type=="mnist":
+        train_data = torchvision.datasets.MNIST(
+            root="./data",
+            train=True,
+            download=True,
+            transform=torchvision.transforms.ToTensor(),
+        )
+
+        test_data = torchvision.datasets.MNIST(
+            root="./data",
+            train=False,
+            download=True,
+            transform=torchvision.transforms.ToTensor(),
+        )
 
     # Create dictionaries to store data for each group
     train_data_groups = {i: [] for i in range(len(label_groups))}
@@ -268,5 +282,75 @@ def get_data_separate_dynamic(label_groups, batch_size=128):
 
         train_loader_list.append(train_loader)
         test_loader_list.append(test_loader)
+
+    return train_loader_list, test_loader_list
+
+
+def get_domain_data(domain_type, train=True):
+    if domain_type == "rotated":
+        transform = transforms.Compose([
+            transforms.RandomRotation(30),
+            transforms.Resize((28, 28)),  # Ensure consistent size
+            transforms.ToTensor()
+        ])
+        return datasets.MNIST(root="./data", train=train, download=True, transform=transform)
+    elif domain_type == "noisy":
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x + 0.1 * torch.randn_like(x))
+        ])
+        return datasets.MNIST(root="./data", train=train, download=True, transform=transform)
+    elif domain_type == "scaled":
+        transform = transforms.Compose([
+            transforms.Resize((28, 28)),
+            transforms.ToTensor()
+        ])
+        return datasets.MNIST(root="./data", train=train, download=True, transform=transform)
+    else:
+        transform = transforms.ToTensor()
+        return datasets.MNIST(root="./data", train=train, download=True, transform=transform) 
+
+
+def get_data_separate_domain_incremental(batch_size=128):
+    domain_type = ["rotated", "noisy", "scaled"]
+    train_loader_list = []
+    test_loader_list = []
+
+    train_data_1 = get_domain_data(domain_type[0])
+    train_data_2 = get_domain_data(domain_type[1])
+    train_data_3 = get_domain_data(domain_type[2])
+    test_data_1 = get_domain_data(domain_type[0], train=False)
+    test_data_2 = get_domain_data(domain_type[1], train=False)
+    test_data_3 = get_domain_data(domain_type[2], train=False)
+
+    train_loader_1 = torch.utils.data.DataLoader(
+        train_data_1, batch_size=batch_size, shuffle=True, drop_last=True
+    )
+    train_loader_list.append(train_loader_1)
+
+    train_loader_2 = torch.utils.data.DataLoader(
+        train_data_2, batch_size=batch_size, shuffle=True, drop_last=True
+    )
+    train_loader_list.append(train_loader_2)
+
+    train_loader_3 = torch.utils.data.DataLoader(
+        train_data_3, batch_size=batch_size, shuffle=True, drop_last=True
+    )
+    train_loader_list.append(train_loader_3)
+
+    test_loader_1 = torch.utils.data.DataLoader(
+        test_data_1, batch_size=batch_size, shuffle=False, drop_last=True
+    )
+    test_loader_list.append(test_loader_1)
+    
+    test_loader_2 = torch.utils.data.DataLoader(
+        test_data_2, batch_size=batch_size, shuffle=False, drop_last=True
+    )
+    test_loader_list.append(test_loader_2)
+
+    test_loader_3 = torch.utils.data.DataLoader(
+        test_data_3, batch_size=batch_size, shuffle=False, drop_last=True
+    )
+    test_loader_list.append(test_loader_3)
 
     return train_loader_list, test_loader_list

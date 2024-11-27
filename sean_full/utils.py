@@ -114,7 +114,7 @@ def forwardprop_and_backprop(
     scalers = None
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        data = data.view(-1, 32*32)
+        data = data.view(-1, 28*28)
         # print(data.shape, target.shape)
         data, target = data.to(device), target.to(device)
         
@@ -150,7 +150,6 @@ def forwardprop_and_backprop(
         loss.backward()
         optimizer.step()
         loss_total += loss.item()
-    print("scalers", scalers)
 
     scheduler.step()
     # print("scaler", scalers)

@@ -10,12 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate_dynamic as get_data_separate
+from data import get_data_separate_dynamic, get_data_separate_domain_incremental, get_data_separate
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 88  # verified
+seed = 100  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -28,7 +28,7 @@ label_groups = [
     [5, 6, 7, 8, 9]
 ]
 
-train_loader_list, test_loader_list = get_data_separate(label_groups, batch_size=128)
+train_loader_list, test_loader_list = get_data_separate_dynamic(label_groups, batch_size=128, type="mnist")
 
 list_of_indexes = [[], [], [],[]]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -40,7 +40,7 @@ masks = [
 ]
 
 
-original_model = NN(32*32, 10, indexes=list_of_indexes).to(device)
+original_model = NN(28*28, 10, indexes=list_of_indexes).to(device)
 optimizer = optim.SGD(original_model.parameters(), lr=0.01, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
@@ -162,10 +162,10 @@ original_model.eval()
 
 for i in range(len(label_groups)):
     correct = 0
-    task_model = task_model_list[i]
+    task_model = task_model_list[-1]
     print(f"### Testing Task {i+1}###")
     for data, target in test_loader_list[i]:
-        data = data.view(-1, 32*32)
+        data = data.view(-1,28*28)
         data, target = data.to(device), target.to(device)
         output, scalers, indices, masks = task_model(data, masks=masks_list[i])
         # check the accuracy
@@ -227,7 +227,7 @@ for i, neuron in enumerate(model_neurons):
     idx = neuron
     # idx = task2_indices[0][neuron]
     plt.subplot(4, 5, i + 1)
-    plt.imshow(model_weights[idx].reshape(32, 32), cmap="gray")
+    plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
     plt.axis("off")
 
 plt.show()
