@@ -85,6 +85,7 @@ def forwardprop_and_backprop(
     masks=None,
     scheduler=None,
     optimizer=None,
+    indices_old = None,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -102,7 +103,7 @@ def forwardprop_and_backprop(
     Returns:
         tuple: Updated list of indexes, masks, model, and optimizer after training.
     """
-    
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     criterion = nn.CrossEntropyLoss()
     if optimizer is None:
@@ -115,18 +116,42 @@ def forwardprop_and_backprop(
         optimizer.zero_grad()
         data = data.view(-1, 784)
         data, target = data.to(device), target.to(device)
+        scalers = None
+        one_hot_target = torch.zeros(target.size(0), 10).to(device)
+        one_hot_target.scatter_(1, target.view(-1, 1), 1)
+            
         if not continual:
-            output, list_of_indexes, masks = model(
-                data, indexes=list_of_indexes, masks=masks
-            )
-            # if i == len(data_loader) - 1:
-            #     list_of_indexes = list_of_indexes_out
+            indices_old = [None] * len(list_of_indexes)
+            if scalers is not None:
+                output, scalers, list_of_indexes, masks = model(
+                    data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target
+                )
+            else:
+                output, scalers, list_of_indexes, masks = model(
+                    data, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target
+                )
 
         else:
+            if scalers is not None:
+                output, scalers, list_of_indexes, masks = model(
+                    data,
+                    scalers,
+                    indexes=list_of_indexes,
+                    masks=masks,
+                    indices_old=indices_old,
+                    # indices_old = None,
+                    target=one_hot_target,
+                )
+            else:
+                output, scalers, list_of_indexes, masks = model(
+                    data,
+                    indexes=list_of_indexes,
+                    masks=masks,
+                    indices_old=indices_old,
+                    # indices_old = None,
+                    target=one_hot_target,
+                )
 
-            output, list_of_indexes_out, masks_out = model(
-                data, indexes=list_of_indexes, masks=masks
-            )
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
@@ -136,14 +161,3 @@ def forwardprop_and_backprop(
 
     print("Avg loss: ", loss_total / len(data_loader))
     return list_of_indexes, masks, model, optimizer
-
-
-# mask1 = [torch.tensor([1, 1, 0, 0, 1, 1]), torch.tensor([1, 1, 0, 0, 1, 1]), torch.tensor([0, 1, 0, 0, 0, 1])]
-# mask2 = [torch.tensor([1, 1, 0, 0, 1, 1]), torch.tensor([1, 1, 0, 0, 1, 1]), torch.tensor([0, 1, 0, 1, 0, 1])]
-
-# indices1 = [[2,3,4], [0,1,2,3,4,5], [2,4,5]]
-# indices2 = [[2,3,4], [0,1,2,3,4,5], [2,4,5]]
-
-# print(get_excess_neurons(indices1, indices2)) # [[], [], []]
-
-# print(torch.arange(6))

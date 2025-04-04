@@ -26,11 +26,16 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
+        self.percent_winner = 0.5
 
-        self.linear1 = nn.Linear(input_size, 256)
-        self.linear2 = nn.Linear(256, 128)
-        self.linear3 = nn.Linear(128, 64)
-        self.linear4 = nn.Linear(64, output_size)
+        self.linear = nn.ModuleList(
+            [
+                nn.Linear(input_size, 256),
+                nn.Linear(256, 128),
+                nn.Linear(128, 64),
+                nn.Linear(64, output_size),
+            ]
+        )
 
         # Define the Hebbian parameters corresponding to each layer
         self.hebb_params = nn.ModuleList(
@@ -49,9 +54,10 @@ class NN(nn.Module):
         self.indexes = indexes
         self.hidden_size_array = [256, 128, 64, output_size]
 
-        self._register_gradient_hooks(self.indexes)
+        if indexes != [[], [], []]:
+            self._register_gradient_hooks(self.indexes)
 
-    def forward(self, x, indexes=None, masks=None):
+    def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None, target=None):
         """
         Defines the forward pass of the network.
 
@@ -66,27 +72,74 @@ class NN(nn.Module):
             list: Hebbian masks for each layer.
         """
 
-        if indexes is not None:
-            self.update_indexes(indexes)
+        if scalers is not None:
+            self.update_indexes(scalers)
 
         hebbian_scores = []
         hebbian_masks = []
-        layers = [self.linear1, self.linear2, self.linear3, self.linear4]
+        hebbian_indices = []
 
-        for i, layer in enumerate(layers):
+        for i, layer in enumerate(self.linear):
+            x1 = layer(x)
+            if i < len(self.linear) - 1:
+                x1 = F.relu(x1)
+            if masks is not None and i < len(self.linear) - 1:
+                x1 = torch.mul(x1, masks[i])
+            if i < len(self.linear) - 1:
+                if indices_old is not None:
+                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                        x, x1, i, indices_old=indices_old[i]
+                    )
+                else:
+                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                        x, x1, i
+                    )
+
+                hebbian_scores.append(hebbian_score)
+                hebbian_masks.append(hebbian_mask)
+                hebbian_indices.append(hebbian_index)
+            
+            else:
+                if indices_old is not None:
+                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                        x, x1, i, indices_old=indices_old[i], target=target
+                    )
+                else:
+                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                        x, x1, i, target=target
+                    )
+
+                hebbian_scores.append(hebbian_score)
+                hebbian_masks.append(hebbian_mask)
+                hebbian_indices.append(hebbian_index)
+
+            x = x1
+        
+        x = nn.Softmax(dim=1)(x)
+
+        return x, hebbian_scores, hebbian_indices, hebbian_masks
+
+    def hebb_forward(self, x, indexes=None):
+        hebbian_scores = [] 
+        hebbian_masks = []
+
+        for i, layer in enumerate(self.hebb_params):
             x1 = layer(x)
             x1 = F.relu(x1)
-            if masks is not None and i < len(layers) - 1:
-                x1 = torch.mul(x1, masks[i])
-            if i < len(layers) - 1:
-                hebbian_score, hebbian_mask = self.hebbian_update(x, i)
+            if i < len(self.linear) - 1:
+                if indexes is not None:
+                    hebbian_score, hebbian_mask = self.hebbian_update(
+                        x, x1, i, indices_old=indexes[i]
+                    )
+                else:
+                    hebbian_score, hebbian_mask = self.hebbian_update(x, x1, i)
                 hebbian_scores.append(hebbian_score)
                 hebbian_masks.append(hebbian_mask)
             x = x1
 
         return x, hebbian_scores, hebbian_masks
 
-    def hebbian_update(self, x, layer_idx, lr=1, threshold=0.5):
+    def hebbian_update(self, x, y, layer_idx, lr=1, threshold=0.5, indices_old=None, target=None):
         """
         Updates Hebbian parameters based on Hebbian learning principles.
 
@@ -101,42 +154,76 @@ class NN(nn.Module):
             torch.Tensor: Mask tensor for the layer based on Hebbian scores.
         """
 
-        heb_param = self.hebb_params[layer_idx]
+        # heb_param = self.hebb_params[layer_idx]
+        heb_param = self.linear[layer_idx]
+        gd_layer = self.linear[layer_idx]
+
         x_size = self.hidden_size_array[layer_idx]
 
-        y = heb_param(x)
-        # y_norm = y / torch.norm(y, dim=1, keepdim=True)
-        # winner_idx = torch.argsort(y_norm)[-self.k :]
+        if target is not None:
+            error = target - y
+            error = torch.mean(error, dim=0, keepdim=True)
+
         inhibit_y = y - self.inhibition_strength * (y.sum(dim=1, keepdim=True) - y)
         y = torch.clamp(inhibit_y, min=0)
 
         theta = torch.mean(y**2, dim=0, keepdim=True)
-        outer_product = torch.mul(y.unsqueeze(2), x.unsqueeze(1))
-        heb_param.weight.data += lr * (
-            torch.sum(outer_product, dim=0)
-            - heb_param.weight.data * theta.T
+
+        if target is not None:
+            outer_product = torch.mul(y.unsqueeze(2), x.unsqueeze(1)) + torch.mul(error.unsqueeze(2), x.unsqueeze(1))
+        else:
+            outer_product = torch.mul(y.unsqueeze(2), x.unsqueeze(1))
+
+
+        delta_w = lr * (
+            torch.sum(outer_product, dim=0) - heb_param.weight.data * theta.T
         )
-        #normalize the weights
-        heb_param.weight.data = heb_param.weight.data / torch.norm(heb_param.weight.data, dim=1, keepdim=True)
 
-        # # select top k% of neurons
-        # y_mean = torch.mean(y, dim=0)
-        # winner_idx = torch.argsort(y_mean, descending=True)[int(x_size * 0.05):-1]
-        # winner_mask = torch.ones_like(y_mean)
-        # winner_mask[winner_idx] = 0
+        delta_w = (delta_w - torch.min(delta_w)) / (torch.max(delta_w) - torch.min(delta_w) + 1e-8)
 
-        # Calculate Hebbian scores and masks
-        hebbian_score = torch.sum(heb_param.weight.data, dim=1)
-        hebbian_score = (hebbian_score - torch.min(hebbian_score)) / (
-            torch.max(hebbian_score) - torch.min(hebbian_score) + 1e-8
+        y_mean = torch.mean(y, dim=0)
+
+        sort = torch.argsort(y_mean, descending=True)
+        if indices_old is not None:
+            # remove the neurons that were selected in the previous iteration
+            y_mean[indices_old] = -1 * torch.inf
+            sort = torch.argsort(y_mean, descending=True)
+            winner_idx = sort[: int(x_size * self.percent_winner)]
+        else:
+            winner_idx = sort[: int(x_size * self.percent_winner)]
+
+        winner_mask = torch.zeros_like(y_mean)
+        winner_mask[winner_idx] = 1
+
+        # update the weights of the gd layer by moving the weights in the direction of the hebbian weights
+        scale = torch.zeros_like(gd_layer.weight.data)
+        scale[winner_idx] = delta_w[winner_idx]
+        # scale values between 0 and 1
+        scale = (scale - torch.min(scale)) / (
+            torch.max(scale) - torch.min(scale) + 1e-8
         )
-        # print(hebbian_score)
-        hebbian_score_indices = torch.where(hebbian_score < threshold)[0]
-        hebbian_mask = torch.ones_like(hebbian_score)
-        hebbian_mask[hebbian_score_indices] = 0
 
+        indices = sort[int(x_size * self.percent_winner) : -1]
 
-        return hebbian_score_indices, hebbian_mask
+        return scale, indices, winner_mask
+
+    def scale_grad(self, scalers):
+        """
+        Scales gradients for neurons specified by indexes.
+
+        Args:
+            indexes (list): List of neuron indices to scale during gradient updates.
+
+        Returns:
+            function: Hook function for modifying gradients during backpropagation.
+        """
+
+        def hook(grad):
+            if len(scalers) > 0:
+                grad *= scalers
+            return grad
+
+        return hook
 
     def freeze_grad(self, indexes):
         """
@@ -168,13 +255,11 @@ class NN(nn.Module):
         Args:
             indexes (list): List of neuron indices to freeze during gradient updates.
         """
-
-        layers = [self.linear1, self.linear2, self.linear3]
-        for i, layer in enumerate(layers):
+        for i, layer in enumerate(self.linear):
             # Check if the layer already has hooks registered and clear them if they exist
             if layer.weight._backward_hooks is not None:
                 layer.weight._backward_hooks.clear()
-            layer.weight.register_hook(self.freeze_grad(indexes[i]))
+            layer.weight.register_hook(self.scale_grad(indexes[i]))
 
     def update_indexes(self, new_indexes):
         """
