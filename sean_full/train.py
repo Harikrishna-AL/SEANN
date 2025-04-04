@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate
+from data import get_data_separate, get_domain_inc_data
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
@@ -102,7 +102,7 @@ print("### Testing Task 1###")
 for data, target in test_loader_1:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
-    output, scalers, indices, masks = task1_model(data, masks=task1_masks)
+    output, scalers, indices, masks = task1_model(data, masks=task1_masks, indices_old=[None]*len(indices))
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
     correct += predicted.eq(target.view_as(predicted)).sum().item()
@@ -115,7 +115,7 @@ print("### Testing Task 2###")
 for data, target in test_loader_2:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
-    output, scalers, indices, masks = task2_model(data, masks=task2_masks)
+    output, scalers, indices, masks = task2_model(data, masks=task2_masks, indices_old=[None]*len(indices))
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
     correct += predicted.eq(target.view_as(predicted)).sum().item()

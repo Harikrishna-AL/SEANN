@@ -26,7 +26,7 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.3
+        self.percent_winner = 0.5
 
         self.linear = nn.ModuleList(
             [
@@ -120,7 +120,7 @@ class NN(nn.Module):
         return x, hebbian_scores, hebbian_indices, hebbian_masks
 
     def hebb_forward(self, x, indexes=None):
-        hebbian_scores = []
+        hebbian_scores = [] 
         hebbian_masks = []
 
         for i, layer in enumerate(self.hebb_params):
@@ -179,12 +179,15 @@ class NN(nn.Module):
             torch.sum(outer_product, dim=0) - heb_param.weight.data * theta.T
         )
 
+        delta_w = (delta_w - torch.min(delta_w)) / (torch.max(delta_w) - torch.min(delta_w) + 1e-8)
+
         y_mean = torch.mean(y, dim=0)
 
         sort = torch.argsort(y_mean, descending=True)
         if indices_old is not None:
             # remove the neurons that were selected in the previous iteration
             y_mean[indices_old] = -1 * torch.inf
+            sort = torch.argsort(y_mean, descending=True)
             winner_idx = sort[: int(x_size * self.percent_winner)]
         else:
             winner_idx = sort[: int(x_size * self.percent_winner)]
