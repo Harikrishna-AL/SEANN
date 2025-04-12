@@ -99,19 +99,19 @@ class NN(nn.Module):
                 hebbian_masks.append(hebbian_mask)
                 hebbian_indices.append(hebbian_index)
             
-            else:
-                if indices_old is not None:
-                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                        x, x1, i, indices_old=indices_old[i], target=target
-                    )
-                else:
-                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                        x, x1, i, target=target
-                    )
+            # else:
+            #     if indices_old is not None:
+            #         hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+            #             x, x1, i, indices_old=indices_old[i], target=target
+            #         )
+            #     else:
+            #         hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+            #             x, x1, i, target=target
+            #         )
 
-                hebbian_scores.append(hebbian_score)
-                hebbian_masks.append(hebbian_mask)
-                hebbian_indices.append(hebbian_index)
+            #     hebbian_scores.append(hebbian_score)
+            #     hebbian_masks.append(hebbian_mask)
+            #     hebbian_indices.append(hebbian_index)
 
             x = x1
         
@@ -159,52 +159,54 @@ class NN(nn.Module):
         gd_layer = self.linear[layer_idx]
 
         x_size = self.hidden_size_array[layer_idx]
-
-        if target is not None:
-            error = target - y
-            error = torch.mean(error, dim=0, keepdim=True)
-
-        inhibit_y = y - self.inhibition_strength * (y.sum(dim=1, keepdim=True) - y)
-        y = torch.clamp(inhibit_y, min=0)
-
-        theta = torch.mean(y**2, dim=0, keepdim=True)
-
-        if target is not None:
-            outer_product = torch.mul(y.unsqueeze(2), x.unsqueeze(1)) + torch.mul(error.unsqueeze(2), x.unsqueeze(1))
-        else:
-            outer_product = torch.mul(y.unsqueeze(2), x.unsqueeze(1))
-
-
-        delta_w = lr * (
-            torch.sum(outer_product, dim=0) - heb_param.weight.data * theta.T
-        )
-
-        delta_w = (delta_w - torch.min(delta_w)) / (torch.max(delta_w) - torch.min(delta_w) + 1e-8)
-
-        y_mean = torch.mean(y, dim=0)
-
-        sort = torch.argsort(y_mean, descending=True)
+        batch_size = x.size(0)
+        
         if indices_old is not None:
-            # remove the neurons that were selected in the previous iteration
-            y_mean[indices_old] = -1 * torch.inf
-            sort = torch.argsort(y_mean, descending=True)
-            winner_idx = sort[: int(x_size * self.percent_winner)]
-        else:
-            winner_idx = sort[: int(x_size * self.percent_winner)]
+            indices_old = indices_old.unsqueeze(0).repeat(batch_size, 1)
+            y = y.scatter(1, indices_old, float('-inf'))
+        
+        _, topk_indices = torch.topk(y, int(self.percent_winner * x_size), dim=1)  # shape: (batch_size, k)
 
-        winner_mask = torch.zeros_like(y_mean)
-        winner_mask[winner_idx] = 1
+        # Create winner mask
+        avg_post_activation = torch.mean(y, dim=0, keepdim=True)
+        _, topk_indices_avg = torch.topk(avg_post_activation, int(self.percent_winner * x_size), dim=1)  # shape: (1, k)
+        winner_mask = torch.zeros_like(avg_post_activation)
+        winner_mask.scatter_(1, topk_indices_avg, 1.0)
+        
+        indices = torch.arange(x_size)
+        indices[topk_indices_avg] = -1
+        indices = indices[indices != -1].squeeze(0)
 
-        # update the weights of the gd layer by moving the weights in the direction of the hebbian weights
+        y = y * winner_mask  
+        
+        post_T = y.t()
+        y_x = torch.mm(post_T, x) / batch_size
+        
+        y_y_T = torch.mm(post_T, y) / batch_size
+        heb_mask = torch.tril(torch.ones(y_y_T.size(), device=y_y_T.device))
+        
+        y_y_T_lower = y_y_T * heb_mask
+        
+        lateral_term = torch.mm(y_y_T_lower, heb_param.weight.data)
+        
+        delta_w = lr  * (y_x - lateral_term)
+        
+        weights = heb_param.weight.data + delta_w
+        
+        with torch.no_grad():
+            norm = torch.norm(weights, p=2, dim=1, keepdim=True)
+            norm = torch.clamp(norm, min=1e-8)
+            weights = weights / norm
+            
+        # if layer_idx == 0:
+        #     heb_param.weight.data = weights
+        
         scale = torch.zeros_like(gd_layer.weight.data)
-        scale[winner_idx] = delta_w[winner_idx]
-        # scale values between 0 and 1
+        scale[topk_indices] = delta_w[topk_indices]
         scale = (scale - torch.min(scale)) / (
             torch.max(scale) - torch.min(scale) + 1e-8
         )
-
-        indices = sort[int(x_size * self.percent_winner) : -1]
-
+        
         return scale, indices, winner_mask
 
     def scale_grad(self, scalers):

@@ -25,13 +25,13 @@ torch.cuda.manual_seed_all(seed)
 data_loader_1, data_loader_2, test_loader_1, test_loader_2 = get_data_separate(
     batch_size=64
 )
-list_of_indexes = [[], [], [],[]]
+list_of_indexes = [[], [], []]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 masks = [
     torch.ones(256).to(device),
     torch.ones(128).to(device),
     torch.ones(64).to(device),
-    torch.ones(10).to(device),
+    # torch.ones(10).to(device),
 ]
 
 
@@ -53,7 +53,7 @@ for i in range(10):
 
 indices = []
 new_masks = []
-layer_sizes = [256, 128, 64, 10]
+layer_sizes = [256, 128, 64]
 for i in range(len(layer_sizes)):
     indices.append(
         torch.tensor(

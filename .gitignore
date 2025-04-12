@@ -5,3 +5,5 @@ model.py
 model_test.py
 sean_cnn.py
 utils.py
+*.png
+data/
