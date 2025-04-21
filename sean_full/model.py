@@ -81,29 +81,20 @@ class NN(nn.Module):
 
         for i, layer in enumerate(self.linear):
             x1 = layer(x)
+            is_final_layer = (i == len(self.linear) - 1)
 
-            if masks is not None and i < len(self.linear) - 1: # check later why multiplying the mask of the last layer as well causes a drop is accuracy values.
+            if masks is not None: # check later why multiplying the mask of the last layer as well causes a drop is accuracy values.
                 x1 = torch.mul(x1, masks[i])
                 
-            if i < len(self.linear) - 1:
-                x1 = F.relu(x1)
-   
-                hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                    x, x1, i, indices_old=indices_old[i],
-                )
+            x1 = F.relu(x1) if not is_final_layer else x1
 
-                hebbian_scores.append(hebbian_score)
-                hebbian_masks.append(hebbian_mask)
-                hebbian_indices.append(hebbian_index)            
-            else:
+            hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                x, x1, i, indices_old=indices_old[i], target=target if is_final_layer else None
+            )
 
-                hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                    x, x1, i, indices_old=indices_old[i], target=target
-                )
-
-                hebbian_scores.append(hebbian_score)
-                hebbian_masks.append(hebbian_mask)
-                hebbian_indices.append(hebbian_index)
+            hebbian_scores.append(hebbian_score)
+            hebbian_masks.append(hebbian_mask)
+            hebbian_indices.append(hebbian_index)            
 
             x = x1
         

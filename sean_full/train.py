@@ -15,7 +15,7 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 34  # verified
+seed = 924  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -69,10 +69,6 @@ for i in range(len(layer_sizes)):
 print("Task 1 indices: ", task1_indices)
 print("Task 1 masks: ", task1_masks)
 print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task1_masks))
-
-# copy model 1 parameters to model 2
-# task2_model = NN(784, 10, indexes=indices).to(device)
-# task2_model.load_state_dict(task1_model.state_dict())
 
 print("### Task 2 ###")
 for i in range(10):
