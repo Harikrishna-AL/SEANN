@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate_dynamic as get_data_separate
+from data import get_data_separate_domain_incremental
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
@@ -28,7 +28,7 @@ label_groups = [
     [5, 6, 7, 8, 9]
 ]
 
-train_loader_list, test_loader_list = get_data_separate(label_groups, batch_size=128)
+train_loader_list, test_loader_list = get_data_separate_domain_incremental(batch_size=64)
 
 list_of_indexes = [[], [], [],[]]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

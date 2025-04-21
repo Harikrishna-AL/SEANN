@@ -150,7 +150,7 @@ def forwardprop_and_backprop(
         loss.backward()
         optimizer.step()
         loss_total += loss.item()
-    print("scalers", scalers)
+    # print("scalers", scalers)
 
     scheduler.step()
 
