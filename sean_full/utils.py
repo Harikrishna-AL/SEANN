@@ -86,6 +86,7 @@ def forwardprop_and_backprop(
     scheduler=None,
     optimizer=None,
     indices_old = None,
+    task_id=None,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -122,36 +123,25 @@ def forwardprop_and_backprop(
             
         if not continual:
             indices_old = [None] * len(list_of_indexes)
-            if scalers is not None:
-                output, scalers, list_of_indexes, masks = model(
-                    data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target
-                )
-            else:
-                output, scalers, list_of_indexes, masks = model(
-                    data, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target
-                )
-
+  
+            output, scalers, list_of_indexes, masks = model(
+                data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target
+            )
+  
         else:
-            if scalers is not None:
-                output, scalers, list_of_indexes, masks = model(
-                    data,
-                    scalers,
-                    indexes=list_of_indexes,
-                    masks=masks,
-                    indices_old=indices_old,
-                    # indices_old = None,
-                    target=one_hot_target,
-                )
-            else:
-                output, scalers, list_of_indexes, masks = model(
-                    data,
-                    indexes=list_of_indexes,
-                    masks=masks,
-                    indices_old=indices_old,
-                    # indices_old = None,
-                    target=one_hot_target,
-                )
-
+            output, scalers, list_of_indexes, masks = model(
+                data,
+                scalers,
+                indexes=list_of_indexes,
+                masks=masks,
+                indices_old=indices_old,
+                target=one_hot_target,
+            )
+   
+        # if task_id is not None:
+        #     output = output[:, 5*(task_id-1):5*task_id]
+        #     target = target % 5
+            
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()

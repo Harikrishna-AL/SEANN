@@ -81,37 +81,29 @@ class NN(nn.Module):
 
         for i, layer in enumerate(self.linear):
             x1 = layer(x)
+
+            if masks is not None and i < len(self.linear) - 1: # check later why multiplying the mask of the last layer as well causes a drop is accuracy values.
+                x1 = torch.mul(x1, masks[i])
+                
             if i < len(self.linear) - 1:
                 x1 = F.relu(x1)
-            if masks is not None and i < len(self.linear) - 1:
-                x1 = torch.mul(x1, masks[i])
-            if i < len(self.linear) - 1:
-                if indices_old is not None:
-                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                        x, x1, i, indices_old=indices_old[i]
-                    )
-                else:
-                    hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                        x, x1, i
-                    )
+   
+                hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                    x, x1, i, indices_old=indices_old[i],
+                )
+
+                hebbian_scores.append(hebbian_score)
+                hebbian_masks.append(hebbian_mask)
+                hebbian_indices.append(hebbian_index)            
+            else:
+
+                hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
+                    x, x1, i, indices_old=indices_old[i], target=target
+                )
 
                 hebbian_scores.append(hebbian_score)
                 hebbian_masks.append(hebbian_mask)
                 hebbian_indices.append(hebbian_index)
-            
-            # else:
-            #     if indices_old is not None:
-            #         hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-            #             x, x1, i, indices_old=indices_old[i], target=target
-            #         )
-            #     else:
-            #         hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-            #             x, x1, i, target=target
-            #         )
-
-            #     hebbian_scores.append(hebbian_score)
-            #     hebbian_masks.append(hebbian_mask)
-            #     hebbian_indices.append(hebbian_index)
 
             x = x1
         
@@ -139,75 +131,119 @@ class NN(nn.Module):
 
         return x, hebbian_scores, hebbian_masks
 
-    def hebbian_update(self, x, y, layer_idx, lr=1, threshold=0.5, indices_old=None, target=None):
+    def hebbian_update(self, x, y, layer_idx, lr=0.00005, threshold=0.5, indices_old=None, target=None):
         """
-        Updates Hebbian parameters based on Hebbian learning principles.
-
-        Args:
-            x (torch.Tensor): Input tensor.
-            layer_idx (int): Index of the current layer in the Hebbian parameter list.
-            lr (float, optional): Learning rate for Hebbian updates.
-            threshold (float, optional): Threshold for Hebbian score masking.
-
-        Returns:
-            torch.Tensor: Indices of neurons with Hebbian scores below the threshold.
-            torch.Tensor: Mask tensor for the layer based on Hebbian scores.
+        Calculates Hebbian-derived scores, masks, and scales for a layer.
+        Handles final layer differently using the one-hot target.
         """
 
-        # heb_param = self.hebb_params[layer_idx]
-        heb_param = self.linear[layer_idx]
         gd_layer = self.linear[layer_idx]
-
-        x_size = self.hidden_size_array[layer_idx]
+        x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
+        # input_size = gd_layer.weight.size(1) # Size of the input dimension of the layer (x's features)
         batch_size = x.size(0)
-        
-        if indices_old is not None:
-            indices_old = indices_old.unsqueeze(0).repeat(batch_size, 1)
-            y = y.scatter(1, indices_old, float('-inf'))
-        
-        _, topk_indices = torch.topk(y, int(self.percent_winner * x_size), dim=1)  # shape: (batch_size, k)
 
-        # Create winner mask
-        avg_post_activation = torch.mean(y, dim=0, keepdim=True)
-        _, topk_indices_avg = torch.topk(avg_post_activation, int(self.percent_winner * x_size), dim=1)  # shape: (1, k)
-        winner_mask = torch.zeros_like(avg_post_activation)
-        winner_mask.scatter_(1, topk_indices_avg, 1.0)
-        
-        indices = torch.arange(x_size)
-        indices[topk_indices_avg] = -1
-        indices = indices[indices != -1].squeeze(0)
+        # Check if this is the final layer (or equivalently, if target is provided)
+        is_final_layer = (target is not None) # Assuming target is only non-None for the final layer
 
-        y = y * winner_mask  
-        
-        post_T = y.t()
-        y_x = torch.mm(post_T, x) / batch_size
-        
-        y_y_T = torch.mm(post_T, y) / batch_size
-        heb_mask = torch.tril(torch.ones(y_y_T.size(), device=y_y_T.device))
-        
-        y_y_T_lower = y_y_T * heb_mask
-        
-        lateral_term = torch.mm(y_y_T_lower, heb_param.weight.data)
-        
-        delta_w = lr  * (y_x - lateral_term)
-        
-        weights = heb_param.weight.data + delta_w
-        
-        with torch.no_grad():
-            norm = torch.norm(weights, p=2, dim=1, keepdim=True)
-            norm = torch.clamp(norm, min=1e-8)
-            weights = weights / norm
-            
-        # if layer_idx == 0:
-        #     heb_param.weight.data = weights
-        
-        scale = torch.zeros_like(gd_layer.weight.data)
-        scale[topk_indices] = delta_w[topk_indices]
-        scale = (scale - torch.min(scale)) / (
-            torch.max(scale) - torch.min(scale) + 1e-8
-        )
-        
-        return scale, indices, winner_mask
+        # --- Calculate delta_w using appropriate rule (Unsupervised for hidden, Supervised for final) ---
+        if not is_final_layer:
+            # Using raw y for delta_w calculation as in your last version
+            post_T = y.t() # Shape: (output_size, batch_size)
+            pre = x        # Shape: (batch_size, input_size)
+
+            y_x = torch.mm(post_T, pre) / batch_size # Shape: (output_size, input_size) - Pre-post correlation average
+
+            y_y_T = torch.mm(post_T, y) / batch_size # Shape: (output_size, output_size) - Post-post correlation average
+            # Applying lower triangle for Oja-like / competitive term
+            heb_mask_tril = torch.tril(torch.ones(y_y_T.size(), device=y_y_T.device))
+            y_y_T_lower = y_y_T * heb_mask_tril
+
+            # Lateral term using current linear weights
+            lateral_term = torch.mm(y_y_T_lower, gd_layer.weight.data) # Shape: (output_size, input_size)
+
+            # Hebbian weight update delta
+            delta_w = lr * (y_x - lateral_term)
+
+            modified_weights = gd_layer.weight.data + delta_w
+            with torch.no_grad():
+                 # Normalize rows (incoming weights for each output neuron)
+                 norm = torch.norm(modified_weights, p=2, dim=1, keepdim=True) # Shape: (output_size, 1)
+                 norm = torch.clamp(norm, min=1e-8) # Avoid division by zero
+                 normalized_modified_weights = modified_weights / norm
+
+            # gd_layer.weight.data = normalized_modified_weights # Uncomment this line if you *do* intend this direct update + normalization
+
+            # Score for each output neuron is the norm of its incoming weight vector
+            hebbian_scores = torch.norm(normalized_modified_weights.detach(), p=2, dim=1) # Shape: (output_size)
+
+            # Apply inhibition from old indices to Hebbian scores before selecting top K
+            if indices_old is not None:
+                 # scatter expects index to be long tensor
+                 hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
+
+            # Select top K based on Hebbian scores
+            num_winners = int(self.percent_winner * x_size)
+            if num_winners == 0 and x_size > 0: num_winners = 1 # Ensure at least one winner if layer exists
+            elif x_size == 0: num_winners = 0 # Handle empty layer gracefully
+
+            if num_winners > 0:
+                 # topk_indices_hebbian contains the indices (position in the layer's output dimension)
+                 _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
+            else:
+                 topk_indices_hebbian = torch.tensor([], dtype=torch.long, device=y.device)
+
+
+            # Create the Hebbian-based winner mask (shape: 1, output_size) for activation masking
+            # This mask will be applied in the *next* forward pass for this task
+            hebbian_mask = torch.zeros(1, x_size, device=y.device)
+            if num_winners > 0:
+                 # Scatter needs index dimension to match self dimension (dim=1 here)
+                 hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0) # Indices need shape (1, num_winners)
+
+            # Get the indices of the non-selected neurons (for indices_old in next iter)
+            all_indices = torch.arange(x_size, device=y.device)
+            indices_non_winners = all_indices[hebbian_mask.squeeze(0) == 0] # Select indices where mask is 0
+
+            scale = torch.zeros_like(gd_layer.weight.data) # Shape: (output_size, input_size)
+
+            if num_winners > 0:
+                 scale[topk_indices_hebbian] = normalized_modified_weights[topk_indices_hebbian]
+
+            return scale, indices_non_winners, hebbian_mask
+
+
+        else:
+            x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
+            if target is None:
+                 print("Warning: Target is None for final layer Hebbian update.")
+                 scale_output = torch.zeros_like(gd_layer.weight.data)
+                 hebbian_mask = torch.ones(1, x_size, device=y.device)
+                 indices_non_winners = torch.tensor([], dtype=torch.long, device=y.device)
+                 return scale_output, indices_non_winners, hebbian_mask
+
+            target_onehot = target
+            post_T_supervised = target_onehot.t() # Shape: (output_size, batch_size)
+            pre_supervised = x                     # Shape: (batch_size, input_size)
+
+            # Correlation term averaged over batch
+            correlation_term = torch.mm(post_T_supervised, pre_supervised) / batch_size # Shape: (output_size, input_size)
+
+            scale_output = correlation_term.detach() # Shape: (output_size, input_size)
+            # Normalize scale for gradients between 0 and 1 (optional, but good practice)
+            min_scale = torch.min(scale_output)
+            max_scale = torch.max(scale_output)
+            if max_scale - min_scale > 1e-8:
+                 scale_output = (scale_output - min_scale) / (max_scale - min_scale)
+          
+            hebbian_scores = torch.norm(scale_output, p=2, dim=1) # Shape: (output_size)
+            if indices_old is not None:
+                hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
+            _, topk_indices_hebbian = torch.topk(hebbian_scores, int(self.percent_winner * x_size)) # Shape: (1)
+            hebbian_mask = torch.zeros(1, x_size, device=y.device)
+            hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0)
+            indices_non_winners = torch.arange(x_size, device=y.device)[hebbian_mask.squeeze(0) == 0] # Select indices where mask is 0
+
+            return scale_output, indices_non_winners, hebbian_mask
 
     def scale_grad(self, scalers):
         """

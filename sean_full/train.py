@@ -15,45 +15,46 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 500  # verified
+seed = 34  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 
 
-data_loader_1, data_loader_2, test_loader_1, test_loader_2 = get_data_separate(
+data_loader_1, data_loader_2, test_loader_1, test_loader_2, test_loader = get_data_separate(
     batch_size=64
 )
-list_of_indexes = [[], [], []]
+list_of_indexes = [[], [], [],[]]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 masks = [
     torch.ones(256).to(device),
     torch.ones(128).to(device),
     torch.ones(64).to(device),
-    # torch.ones(10).to(device),
+    torch.ones(10).to(device),
 ]
 
 
 original_model = NN(784, 10, indexes=list_of_indexes).to(device)
-optimizer = optim.SGD(original_model.parameters(), lr=0.01, momentum=0.9)
+optimizer = optim.SGD(original_model.parameters(), lr=0.1, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 for i in range(10):
     task1_indices, task1_masks, task1_model, optimizer = forwardprop_and_backprop(
         original_model,
-        0.01,
+        0.1,
         data_loader_1,
         list_of_indexes=list_of_indexes,
         masks=masks,
         optimizer=optimizer,
         scheduler=scheduler,
+        task_id=1,
     )
     list_of_indexes = task1_indices
     # print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))
 
 indices = []
 new_masks = []
-layer_sizes = [256, 128, 64]
+layer_sizes = [256, 128, 64, 10]
 for i in range(len(layer_sizes)):
     indices.append(
         torch.tensor(
@@ -84,7 +85,8 @@ for i in range(10):
         continual=True,
         optimizer=None,
         scheduler=scheduler,
-        indices_old=indices
+        indices_old=indices,
+        task_id=2,
     )
 # print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
 # print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))
@@ -93,12 +95,49 @@ print("Task 2 indices: ", task2_indices)
 print("Task 2 masks: ", task2_masks)
 print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
 
-# test
-# forwardprop_and_backprop(original_model, test_loader, list_of_indexes=list_of_indexes)
+all_masks = [task1_masks, task2_masks]
 correct = 0
 accuracies = []
 original_model.eval()
+
+print("### Testing both Tasks ###")
+for data, target in test_loader:
+    data = data.view(-1, 784).to(device)
+    target = target.to(device)
+    
+    outputs = []
+    entropies = []
+
+    for mask in all_masks:
+        # Forward pass through the subnetwork defined by the mask
+        output, scalers, indices, masks = original_model(data, masks=mask, indices_old=[None]*len(mask))
+        outputs.append(output)
+
+        prob = output
+        # prob = F.softmax(output, dim=1)
+        entropy = -torch.sum(prob * torch.log(prob + 1e-10), dim=1)  # shape: (batch_size,)
+        entropies.append(entropy)
+
+    entropies = torch.stack(entropies, dim=0)  # (2, batch_size)
+    outputs = torch.stack(outputs, dim=0)      # (2, batch_size, num_classes)
+
+    # Choose output from network with minimum entropy for each sample
+    min_entropy_indices = torch.argmin(entropies, dim=0)  # shape: (batch_size,)
+    
+    batch_size = data.size(0)
+    final_preds = torch.zeros(batch_size, dtype=torch.long, device=device)
+
+    for i in range(batch_size):
+        selected_output = outputs[min_entropy_indices[i], i]
+        final_preds[i] = selected_output.argmax()
+
+    correct += final_preds.eq(target).sum().item()
+
+print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%")
+
+correct = 0    
 print("### Testing Task 1###")
+task_id = 1
 for data, target in test_loader_1:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
@@ -110,31 +149,35 @@ for data, target in test_loader_1:
 print(f"Accuracy for Task 1: {100* correct/len(test_loader_1.dataset)}%")
 accuracies.append(100 * correct / len(test_loader_1.dataset))
 
+# task2_masks = get_merge_mask(task1_masks, task2_masks)
+
 correct = 0
 print("### Testing Task 2###")
+task_id = 2
 for data, target in test_loader_2:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
     output, scalers, indices, masks = task2_model(data, masks=task2_masks, indices_old=[None]*len(indices))
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
+    # target = target % 5
     correct += predicted.eq(target.view_as(predicted)).sum().item()
 
 print(f"Accuracy for Task 2: {100* correct/len(test_loader_2.dataset)}%")
 accuracies.append(100 * correct / len(test_loader_2.dataset))
 
 
-import matplotlib.pyplot as plt
-import numpy as np
+# import matplotlib.pyplot as plt
+# import numpy as np
 
 # hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
-model_weights = task2_model.linear[0].weight.data.cpu().numpy()
-model_weights1 = task2_model.linear[1].weight.data.cpu().numpy()
+# model_weights = task2_model.linear[0].weight.data.cpu().numpy()
+# model_weights1 = task2_model.linear[1].weight.data.cpu().numpy()
 
-model_neurons = np.random.choice(256, 20)
-model_neurons1 = np.random.choice(128, 20)
-# select random 20 neurons
-neurons = np.random.choice(256, 20)
+# model_neurons = np.random.choice(256, 20)
+# model_neurons1 = np.random.choice(128, 20)
+# # select random 20 neurons
+# neurons = np.random.choice(256, 20)
 
 
 # plt.figure(figsize=(20, 10))
@@ -145,22 +188,22 @@ neurons = np.random.choice(256, 20)
 
 # plt.show()
 
-plt.figure(figsize=(20, 10))
-for i, neuron in enumerate(model_neurons):
-    idx = neuron
-    # idx = task2_indices[0][neuron]
-    plt.subplot(4, 5, i + 1)
-    plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
-    plt.axis("off")
+# plt.figure(figsize=(20, 10))
+# for i, neuron in enumerate(model_neurons):
+#     idx = neuron
+#     # idx = task2_indices[0][neuron]
+#     plt.subplot(4, 5, i + 1)
+#     plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
+#     plt.axis("off")
 
-plt.show()
+# plt.show()
 
-plt.figure(figsize=(20, 10))
-for i, neuron in enumerate(model_neurons1):
-    idx = neuron
-    # idx = task2_indices[1][neuron]
-    plt.subplot(4, 5, i + 1)
-    plt.imshow(model_weights1[idx].reshape(16, 16), cmap="gray")
-    plt.axis("off")
+# plt.figure(figsize=(20, 10))
+# for i, neuron in enumerate(model_neurons1):
+#     idx = neuron
+#     # idx = task2_indices[1][neuron]
+#     plt.subplot(4, 5, i + 1)
+#     plt.imshow(model_weights1[idx].reshape(16, 16), cmap="gray")
+#     plt.axis("off")
 
-plt.show()
+# plt.show()

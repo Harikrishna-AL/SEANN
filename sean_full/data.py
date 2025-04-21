@@ -69,8 +69,12 @@ def get_data_separate(batch_size=128):
     test_loader_2 = torch.utils.data.DataLoader(
         test_data_2, batch_size=batch_size, shuffle=False, drop_last=True
     )
+    
+    test_loader = torch.utils.data.DataLoader(
+        test_data, batch_size=batch_size, shuffle=False, drop_last=True
+    )
 
-    return train_loader_1, train_loader_2, test_loader_1, test_loader_2
+    return train_loader_1, train_loader_2, test_loader_1, test_loader_2, test_loader
 
 def get_domain_inc_data(batch_size=128):
     train_data = torchvision.datasets.MNIST(
