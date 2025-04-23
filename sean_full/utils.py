@@ -70,9 +70,9 @@ def calc_percentage_of_zero_grad(masks):
 
     total = 0
     zero = 0
-    for mask in masks:
-        total += mask.numel()
-        zero += torch.sum(mask == 0).item()
+    for i in range(len(masks)-1):
+        total += masks[i].numel()
+        zero += torch.sum(masks[i] == 0).item()
     return (1 - zero / total) * 100
 
 
@@ -124,18 +124,19 @@ def forwardprop_and_backprop(
         if not continual:
             indices_old = [None] * len(list_of_indexes)
   
-            output, scalers, list_of_indexes, masks = model(
-                data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target
+            output, scalers, list_of_indexes, masks, common_indices = model(
+                data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target, selection_method="hebbian",
             )
   
         else:
-            output, scalers, list_of_indexes, masks = model(
+            output, scalers, list_of_indexes, masks, common_indices = model(
                 data,
                 scalers,
                 indexes=list_of_indexes,
                 masks=masks,
                 indices_old=indices_old,
                 target=one_hot_target,
+                selection_method="hebbian",
             )
    
         # if task_id is not None:
@@ -143,6 +144,13 @@ def forwardprop_and_backprop(
         #     target = target % 5
             
         loss = criterion(output, target)
+        # if common_indices is not None:
+        #     # implement l2 regularization
+        #     for i in range(len(common_indices)):
+        #         loss += 0.01 * torch.norm(
+        #             model.linear[i].weight[common_indices[i]], p=2
+        #         )
+                    
         loss.backward()
         optimizer.step()
         loss_total += loss.item()

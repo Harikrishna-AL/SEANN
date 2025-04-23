@@ -15,7 +15,7 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 924  # verified
+seed = 100  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -89,7 +89,9 @@ for i in range(10):
 
 print("Task 2 indices: ", task2_indices)
 print("Task 2 masks: ", task2_masks)
-print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
+total_mask = get_merge_mask(task1_masks, task2_masks)
+print("Percentage of Total frozen neurons: ", calc_percentage_of_zero_grad(total_mask))
+print("Percentage of frozen neurons in task 2: ", calc_percentage_of_zero_grad(task2_masks))
 
 all_masks = [task1_masks, task2_masks]
 correct = 0
@@ -106,7 +108,7 @@ for data, target in test_loader:
 
     for mask in all_masks:
         # Forward pass through the subnetwork defined by the mask
-        output, scalers, indices, masks = original_model(data, masks=mask, indices_old=[None]*len(mask))
+        output, scalers, indices, masks, _ = original_model(data, masks=mask, indices_old=[None]*len(mask))
         outputs.append(output)
 
         prob = output
@@ -137,7 +139,7 @@ task_id = 1
 for data, target in test_loader_1:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
-    output, scalers, indices, masks = task1_model(data, masks=task1_masks, indices_old=[None]*len(indices))
+    output, scalers, indices, masks, _ = task1_model(data, masks=task1_masks, indices_old=[None]*len(indices))
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
     correct += predicted.eq(target.view_as(predicted)).sum().item()
@@ -153,7 +155,7 @@ task_id = 2
 for data, target in test_loader_2:
     data = data.view(-1, 784)
     data, target = data.to(device), target.to(device)
-    output, scalers, indices, masks = task2_model(data, masks=task2_masks, indices_old=[None]*len(indices))
+    output, scalers, indices, masks, _ = task2_model(data, masks=task2_masks, indices_old=[None]*len(indices))
     # check the accuracy
     predicted = output.argmax(dim=1, keepdim=True)
     # target = target % 5
@@ -163,26 +165,26 @@ print(f"Accuracy for Task 2: {100* correct/len(test_loader_2.dataset)}%")
 accuracies.append(100 * correct / len(test_loader_2.dataset))
 
 
-# import matplotlib.pyplot as plt
-# import numpy as np
+import matplotlib.pyplot as plt
+import numpy as np
 
-# hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
-# model_weights = task2_model.linear[0].weight.data.cpu().numpy()
-# model_weights1 = task2_model.linear[1].weight.data.cpu().numpy()
+hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
+model_weights = task2_model.linear[0].weight.data.cpu().numpy()
+model_weights1 = task2_model.linear[1].weight.data.cpu().numpy()
 
-# model_neurons = np.random.choice(256, 20)
-# model_neurons1 = np.random.choice(128, 20)
-# # select random 20 neurons
-# neurons = np.random.choice(256, 20)
+model_neurons = np.random.choice(256, 20)
+model_neurons1 = np.random.choice(128, 20)
+# select random 20 neurons
+neurons = np.random.choice(256, 20)
 
 
-# plt.figure(figsize=(20, 10))
-# for i, neuron in enumerate(neurons):
-#     plt.subplot(4, 5, i + 1)
-#     plt.imshow(hebbian_weights[neuron].reshape(28, 28), cmap="gray")
-#     plt.axis("off")
+plt.figure(figsize=(20, 10))
+for i, neuron in enumerate(neurons):
+    plt.subplot(4, 5, i + 1)
+    plt.imshow(hebbian_weights[neuron].reshape(28, 28), cmap="gray")
+    plt.axis("off")
 
-# plt.show()
+plt.show()
 
 # plt.figure(figsize=(20, 10))
 # for i, neuron in enumerate(model_neurons):

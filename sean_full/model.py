@@ -57,7 +57,7 @@ class NN(nn.Module):
         if indexes != [[], [], []]:
             self._register_gradient_hooks(self.indexes)
 
-    def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None, target=None):
+    def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None, target=None, selection_method="hebbian"):
         """
         Defines the forward pass of the network.
 
@@ -78,6 +78,7 @@ class NN(nn.Module):
         hebbian_scores = []
         hebbian_masks = []
         hebbian_indices = []
+        common_indices = []
 
         for i, layer in enumerate(self.linear):
             x1 = layer(x)
@@ -88,19 +89,28 @@ class NN(nn.Module):
                 
             x1 = F.relu(x1) if not is_final_layer else x1
 
-            hebbian_score, hebbian_index, hebbian_mask = self.hebbian_update(
-                x, x1, i, indices_old=indices_old[i], target=target if is_final_layer else None
-            )
+            if selection_method == "hebbian":
+                hebbian_score, hebbian_index, hebbian_mask, common_index = self.hebbian_update(
+                    x, x1, i, indices_old=indices_old[i], target=target if is_final_layer else None
+                )
+            elif selection_method == "random":
+                hebbian_score, hebbian_index, hebbian_mask, common_index = self.random_selection(
+                    x, x1, i, indices_old=indices_old[i], target=target if is_final_layer else None
+                )
+            else:
+                raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
 
             hebbian_scores.append(hebbian_score)
             hebbian_masks.append(hebbian_mask)
-            hebbian_indices.append(hebbian_index)            
+            hebbian_indices.append(hebbian_index)
+            if common_index is not None:
+                common_indices.append(common_index)            
 
             x = x1
         
         x = nn.Softmax(dim=1)(x)
 
-        return x, hebbian_scores, hebbian_indices, hebbian_masks
+        return x, hebbian_scores, hebbian_indices, hebbian_masks, common_indices
 
     def hebb_forward(self, x, indexes=None):
         hebbian_scores = [] 
@@ -132,7 +142,7 @@ class NN(nn.Module):
         x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
         # input_size = gd_layer.weight.size(1) # Size of the input dimension of the layer (x's features)
         batch_size = x.size(0)
-
+        common_indices = None
         # Check if this is the final layer (or equivalently, if target is provided)
         is_final_layer = (target is not None) # Assuming target is only non-None for the final layer
 
@@ -168,9 +178,9 @@ class NN(nn.Module):
             hebbian_scores = torch.norm(normalized_modified_weights.detach(), p=2, dim=1) # Shape: (output_size)
 
             # Apply inhibition from old indices to Hebbian scores before selecting top K
-            if indices_old is not None:
-                 # scatter expects index to be long tensor
-                 hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
+            # if indices_old is not None:
+            #      # scatter expects index to be long tensor
+            #      hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
 
             # Select top K based on Hebbian scores
             num_winners = int(self.percent_winner * x_size)
@@ -178,10 +188,23 @@ class NN(nn.Module):
             elif x_size == 0: num_winners = 0 # Handle empty layer gracefully
 
             if num_winners > 0:
-                 # topk_indices_hebbian contains the indices (position in the layer's output dimension)
-                 _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
+                # topk_indices_hebbian contains the indices (position in the layer's output dimension)
+                _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
+                if indices_old is not None:
+                    common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
+                    common_indices = topk_indices_hebbian[common_indices]
+                    # print(f"Common indices: {common_indices}")
+                    if len(common_indices) > int(0.5 * num_winners):
+                        # If too many common indices, reselect
+                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(0.5*num_winners)], float('-inf'))
+                        _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
+                    else:
+                        hebbian_scores = hebbian_scores.scatter(0, common_indices, float('-inf'))
+                        _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
+                        
+                         
             else:
-                 topk_indices_hebbian = torch.tensor([], dtype=torch.long, device=y.device)
+                topk_indices_hebbian = torch.tensor([], dtype=torch.long, device=y.device)
 
 
             # Create the Hebbian-based winner mask (shape: 1, output_size) for activation masking
@@ -200,7 +223,7 @@ class NN(nn.Module):
             if num_winners > 0:
                  scale[topk_indices_hebbian] = normalized_modified_weights[topk_indices_hebbian]
 
-            return scale, indices_non_winners, hebbian_mask
+            return scale, indices_non_winners, hebbian_mask, common_indices
 
 
         else:
@@ -234,7 +257,102 @@ class NN(nn.Module):
             hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0)
             indices_non_winners = torch.arange(x_size, device=y.device)[hebbian_mask.squeeze(0) == 0] # Select indices where mask is 0
 
-            return scale_output, indices_non_winners, hebbian_mask
+            return scale_output, indices_non_winners, hebbian_mask, common_indices
+        
+    def random_selection(self, x, y, layer_idx, indices_old=None, target=None):
+        """
+        Selects neurons randomly for scaling/masking.
+        Handles final layer similarly regarding num_winners based on percent_winner.
+        Ignores Hebbian scores.
+        """
+        gd_layer = self.linear[layer_idx]
+        x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
+        batch_size = x.size(0)
+        is_final_layer = (target is not None)
+
+        # Calculate the number of winners based on percent_winner, same as Hebbian
+        num_winners = int(self.percent_winner * x_size)
+        if num_winners == 0 and x_size > 0: num_winners = 1 # Ensure at least one winner if layer exists
+        elif x_size == 0: num_winners = 0 # Handle empty layer gracefully
+
+        # Get all possible indices for this layer
+        all_indices = torch.arange(x_size, device=y.device)
+
+        if indices_old is not None and indices_old.numel() > 0:
+            # Create a boolean mask where True means the index is NOT in indices_old
+            is_allowed = ~torch.isin(all_indices, indices_old.long())
+            allowed_indices = all_indices[is_allowed]
+        else:
+            # If no old indices, all indices are allowed
+            allowed_indices = all_indices
+
+        num_candidates = allowed_indices.size(0)
+        # Ensure we don't try to select more winners than available candidates
+        num_winners = min(num_winners, num_candidates)
+
+
+        # --- Random Selection ---
+        if num_winners > 0:
+            # Randomly permute the allowed indices and take the first 'num_winners'
+            perm = torch.randperm(num_candidates, device=y.device)
+            topk_indices_random = allowed_indices[perm[:num_winners]] # Shape: (num_winners)
+        else:
+            topk_indices_random = torch.tensor([], dtype=torch.long, device=y.device)
+
+        random_mask = torch.zeros(1, x_size, device=y.device)
+        if num_winners > 0:
+            random_mask.scatter_(1, topk_indices_random.unsqueeze(0), 1.0)
+
+        # Get the indices of the non-selected neurons (complement of random winners)
+        indices_non_winners = all_indices[random_mask.squeeze(0) == 0]
+
+        if not is_final_layer:
+            # Use raw y for correlation
+            post_T = y.t() # Shape: (output_size, batch_size)
+            pre = x        # Shape: (batch_size, input_size)
+            correlation_term = torch.mm(post_T, pre) / batch_size # Shape: (output_size, input_size)
+            with torch.no_grad():
+                norm_correlation = torch.norm(correlation_term.detach(), p=2, dim=1, keepdim=True) # Shape: (output_size, 1)
+                norm_correlation = torch.clamp(norm_correlation, min=1e-8) # Avoid division by zero
+                normalized_correlation = correlation_term.detach() / norm_correlation # Shape: (output_size, input_size)
+
+        else: # Final layer (supervised)
+            if target is None:
+                print("Warning: Target is None for final layer random selection scale calculation.")
+                # Return default zero scale, all-one mask, and empty non-winners
+                scale_output = torch.zeros_like(gd_layer.weight.data)
+                random_mask_output = torch.ones(1, x_size, device=y.device) # Default to all active if no target for final layer
+                indices_non_winners_output = torch.tensor([], dtype=torch.long, device=y.device)
+                return scale_output, indices_non_winners_output, random_mask_output
+
+            # Use one-hot target for correlation calculation for final layer scale
+            post_T_supervised = target.t() # Shape: (output_size, batch_size)
+            pre_supervised = x
+            correlation_term = torch.mm(post_T_supervised, pre_supervised) / batch_size # Shape: (output_size, input_size)
+            with torch.no_grad():
+                norm_correlation = torch.norm(correlation_term.detach(), p=2, dim=1, keepdim=True) # Shape: (output_size, 1)
+                norm_correlation = torch.clamp(norm_correlation, min=1e-8) # Avoid division by zero
+                normalized_correlation = correlation_term.detach() / norm_correlation # Shape: (output_size, input_size)
+
+         # Shape: (output_size, input_size)
+        if num_winners > 0:
+            # scale[topk_indices_random] = normalized_correlation[topk_indices_random]
+            scale = torch.zeros_like(gd_layer.weight.data)
+            scale[topk_indices_random] = 1.0
+        
+        if is_final_layer:
+            scale = torch.zeros_like(gd_layer.weight.data)
+            scale[topk_indices_random] = normalized_correlation[topk_indices_random]
+            hebbian_scores = torch.norm(scale, p=2, dim=1) # Shape: (output_size)
+            if indices_old is not None:
+                hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
+            _, topk_indices_hebbian = torch.topk(hebbian_scores, int(self.percent_winner * x_size)) # Shape: (1)
+            hebbian_mask = torch.zeros(1, x_size, device=y.device)
+            hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0)
+            random_mask = hebbian_mask
+            indices_non_winners = torch.arange(x_size, device=y.device)[hebbian_mask.squeeze(0) == 0]
+
+        return scale, indices_non_winners, random_mask
 
     def scale_grad(self, scalers):
         """
