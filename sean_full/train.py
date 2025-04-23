@@ -15,7 +15,7 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 100  # verified
+seed = 49  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -70,6 +70,8 @@ print("Task 1 indices: ", task1_indices)
 print("Task 1 masks: ", task1_masks)
 print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task1_masks))
 
+task1_parameters = task1_model.linear
+
 print("### Task 2 ###")
 for i in range(10):
     task2_indices, task2_masks, task2_model, optimizer = forwardprop_and_backprop(
@@ -83,6 +85,7 @@ for i in range(10):
         scheduler=scheduler,
         indices_old=indices,
         task_id=2,
+        task1_parameters=task1_parameters,
     )
 # print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
 # print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))

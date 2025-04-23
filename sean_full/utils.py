@@ -87,6 +87,7 @@ def forwardprop_and_backprop(
     optimizer=None,
     indices_old = None,
     task_id=None,
+    task1_parameters=None,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -145,11 +146,18 @@ def forwardprop_and_backprop(
             
         loss = criterion(output, target)
         # if common_indices is not None:
-        #     # implement l2 regularization
+        #     #add ewc loss to the main loss
+        #     ewc_loss = 0
         #     for i in range(len(common_indices)):
-        #         loss += 0.01 * torch.norm(
-        #             model.linear[i].weight[common_indices[i]], p=2
+        #         ewc_loss += torch.sum(
+        #             torch.pow(
+        #                 model.linear[i].weight[common_indices[i]]
+        #                 - task1_parameters[i].weight[common_indices[i]],
+        #                 2,
+        #             )
         #         )
+        #     loss += 0.1 * ewc_loss
+        
                     
         loss.backward()
         optimizer.step()
