@@ -7,6 +7,37 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
+class RNNGate(nn.Module):
+    """
+    RNN gate class for controlling the flow of information in the network.
+    """
+
+    def __init__(self, input_size, hidden_size, output_size):
+        """
+        Initializes the RNN gate parameters.
+
+        Args:
+            input_size (int): Size of the input layer.
+            hidden_size (int): Size of the hidden layer.
+        """
+        super(RNNGate, self).__init__()
+        self.rnn = nn.RNN(input_size, hidden_size, batch_first=True)
+        self.linear = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        """
+        Defines the forward pass of the RNN gate.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the RNN and linear layer.
+        """
+        out, _ = self.rnn(x)
+        out = self.linear(out)
+        return out
+
 class NN(nn.Module):
     """
     Neural network class with Hebbian learning mechanisms.
@@ -140,62 +171,54 @@ class NN(nn.Module):
 
         gd_layer = self.linear[layer_idx]
         x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
-        # input_size = gd_layer.weight.size(1) # Size of the input dimension of the layer (x's features)
+
         batch_size = x.size(0)
         common_indices = None
-        # Check if this is the final layer (or equivalently, if target is provided)
+
         is_final_layer = (target is not None) # Assuming target is only non-None for the final layer
 
-        # --- Calculate delta_w using appropriate rule (Unsupervised for hidden, Supervised for final) ---
         if not is_final_layer:
-            # Using raw y for delta_w calculation as in your last version
             post_T = y.t() # Shape: (output_size, batch_size)
             pre = x        # Shape: (batch_size, input_size)
 
             y_x = torch.mm(post_T, pre) / batch_size # Shape: (output_size, input_size) - Pre-post correlation average
 
             y_y_T = torch.mm(post_T, y) / batch_size # Shape: (output_size, output_size) - Post-post correlation average
-            # Applying lower triangle for Oja-like / competitive term
             heb_mask_tril = torch.tril(torch.ones(y_y_T.size(), device=y_y_T.device))
             y_y_T_lower = y_y_T * heb_mask_tril
 
-            # Lateral term using current linear weights
             lateral_term = torch.mm(y_y_T_lower, gd_layer.weight.data) # Shape: (output_size, input_size)
 
-            # Hebbian weight update delta
             delta_w = lr * (y_x - lateral_term)
 
             modified_weights = gd_layer.weight.data + delta_w
             with torch.no_grad():
-                 # Normalize rows (incoming weights for each output neuron)
                  norm = torch.norm(modified_weights, p=2, dim=1, keepdim=True) # Shape: (output_size, 1)
                  norm = torch.clamp(norm, min=1e-8) # Avoid division by zero
                  normalized_modified_weights = modified_weights / norm
 
             # gd_layer.weight.data = normalized_modified_weights # Uncomment this line if you *do* intend this direct update + normalization
 
-            # Score for each output neuron is the norm of its incoming weight vector
             hebbian_scores = torch.norm(normalized_modified_weights.detach(), p=2, dim=1) # Shape: (output_size)
 
-            # Apply inhibition from old indices to Hebbian scores before selecting top K
             # if indices_old is not None:
             #      # scatter expects index to be long tensor
             #      hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
 
-            # Select top K based on Hebbian scores
             num_winners = int(self.percent_winner * x_size)
             if num_winners == 0 and x_size > 0: num_winners = 1 # Ensure at least one winner if layer exists
             elif x_size == 0: num_winners = 0 # Handle empty layer gracefully
 
             if num_winners > 0:
-                # topk_indices_hebbian contains the indices (position in the layer's output dimension)
                 _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
                 if indices_old is not None:
+                    # all_indices = torch.arange(x_size, device=y.device)
+                    # is_allowed = ~torch.isin(all_indices, indices_old.long())
+                    # allowed_indices = all_indices[is_allowed]
+                    # indices_old = allowed_indices
                     common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_indices]
-                    # print(f"Common indices: {common_indices}")
                     if len(common_indices) > int(0.5 * num_winners):
-                        # If too many common indices, reselect
                         hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(0.5*num_winners)], float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                     else:
@@ -207,14 +230,10 @@ class NN(nn.Module):
                 topk_indices_hebbian = torch.tensor([], dtype=torch.long, device=y.device)
 
 
-            # Create the Hebbian-based winner mask (shape: 1, output_size) for activation masking
-            # This mask will be applied in the *next* forward pass for this task
             hebbian_mask = torch.zeros(1, x_size, device=y.device)
             if num_winners > 0:
-                 # Scatter needs index dimension to match self dimension (dim=1 here)
                  hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0) # Indices need shape (1, num_winners)
 
-            # Get the indices of the non-selected neurons (for indices_old in next iter)
             all_indices = torch.arange(x_size, device=y.device)
             indices_non_winners = all_indices[hebbian_mask.squeeze(0) == 0] # Select indices where mask is 0
 
@@ -239,11 +258,9 @@ class NN(nn.Module):
             post_T_supervised = target_onehot.t() # Shape: (output_size, batch_size)
             pre_supervised = x                     # Shape: (batch_size, input_size)
 
-            # Correlation term averaged over batch
             correlation_term = torch.mm(post_T_supervised, pre_supervised) / batch_size # Shape: (output_size, input_size)
 
             scale_output = correlation_term.detach() # Shape: (output_size, input_size)
-            # Normalize scale for gradients between 0 and 1 (optional, but good practice)
             min_scale = torch.min(scale_output)
             max_scale = torch.max(scale_output)
             if max_scale - min_scale > 1e-8:

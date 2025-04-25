@@ -88,6 +88,7 @@ def forwardprop_and_backprop(
     indices_old = None,
     task_id=None,
     task1_parameters=None,
+    rnn_gate=None,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -139,12 +140,12 @@ def forwardprop_and_backprop(
                 target=one_hot_target,
                 selection_method="hebbian",
             )
-   
+        
         # if task_id is not None:
         #     output = output[:, 5*(task_id-1):5*task_id]
         #     target = target % 5
             
-        loss = criterion(output, target)
+        loss = criterion(output, target) 
         # if common_indices is not None:
         #     #add ewc loss to the main loss
         #     ewc_loss = 0
@@ -156,7 +157,7 @@ def forwardprop_and_backprop(
         #                 2,
         #             )
         #         )
-        #     loss += 0.1 * ewc_loss
+        #     loss += 0.5 * ewc_loss
         
                     
         loss.backward()
