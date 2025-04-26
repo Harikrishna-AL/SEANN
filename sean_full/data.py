@@ -28,7 +28,7 @@ def get_data(batch_size=128):
 
 
 # make a function that gives a mnist dataloader that gives a continous data of only classes 0-4 and after that 5-9
-def get_data_separate(batch_size=128):
+def get_data_separate(batch_size=128, num_tasks=2, max_classes=10):
     train_data = torchvision.datasets.MNIST(
         root="../../data",
         train=True,
@@ -46,35 +46,64 @@ def get_data_separate(batch_size=128):
     train_data_2 = []
     test_data_1 = []
     test_data_2 = []
-    for data, target in train_data:
-        if target < 5:
-            train_data_1.append((data, target))
-        else:
-            train_data_2.append((data, target))
-    for data, target in test_data:
-        if target < 5:
-            test_data_1.append((data, target))
-        else:
-            test_data_2.append((data, target))
 
-    train_loader_1 = torch.utils.data.DataLoader(
-        train_data_1, batch_size=batch_size, shuffle=True, drop_last=True
-    )
-    train_loader_2 = torch.utils.data.DataLoader(
-        train_data_2, batch_size=batch_size, shuffle=True, drop_last=True
-    )
-    test_loader_1 = torch.utils.data.DataLoader(
-        test_data_1, batch_size=batch_size, shuffle=False, drop_last=True
-    )
-    test_loader_2 = torch.utils.data.DataLoader(
-        test_data_2, batch_size=batch_size, shuffle=False, drop_last=True
-    )
+    all_train_data = []
+    all_test_data = []
+    
+    per_task = max_classes // num_tasks
 
-    test_loader = torch.utils.data.DataLoader(
-        test_data, batch_size=batch_size, shuffle=False, drop_last=True
-    )
+    for i in range(per_task, max_classes + 1, per_task):
+        task_train_data = []
+        task_test_data = []
+        for data, target in train_data:
+            if i - per_task <= target < i:
+                task_train_data.append((data, target))
 
-    return train_loader_1, train_loader_2, test_loader_1, test_loader_2, test_loader
+        for data, target in test_data:
+            if i - per_task <= target < i:
+                task_test_data.append((data, target))
+
+        train_loader = torch.utils.data.DataLoader(
+            task_train_data, batch_size=batch_size, shuffle=True, drop_last=True
+        )
+        test_loader = torch.utils.data.DataLoader(
+            task_test_data, batch_size=batch_size, shuffle=False, drop_last=True
+        )
+
+        all_train_data.append(train_loader)
+        all_test_data.append(test_loader)
+
+    # for data, target in train_data:
+    #     if target < 5:
+    #         train_data_1.append((data, target))
+    #     else:
+    #         train_data_2.append((data, target))
+    # for data, target in test_data:
+    #     if target < 5:
+    #         test_data_1.append((data, target))
+    #     else:
+    #         test_data_2.append((data, target))
+
+    # train_loader_1 = torch.utils.data.DataLoader(
+    #     train_data_1, batch_size=batch_size, shuffle=True, drop_last=True
+    # )
+    # train_loader_2 = torch.utils.data.DataLoader(
+    #     train_data_2, batch_size=batch_size, shuffle=True, drop_last=True
+    # )
+    # test_loader_1 = torch.utils.data.DataLoader(
+    #     test_data_1, batch_size=batch_size, shuffle=False, drop_last=True
+    # )
+    # test_loader_2 = torch.utils.data.DataLoader(
+    #     test_data_2, batch_size=batch_size, shuffle=False, drop_last=True
+    # )
+
+    # test_loader = torch.utils.data.DataLoader(
+    #     test_data, batch_size=batch_size, shuffle=False, drop_last=True
+    # )
+
+    # return train_loader_1, train_loader_2, test_loader_1, test_loader_2, test_loader
+    # unroll the list of dataloaders and return them
+    return all_train_data, all_test_data
 
 
 def get_domain_inc_data(batch_size=128):

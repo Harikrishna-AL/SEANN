@@ -3,6 +3,33 @@ from tqdm import tqdm
 from torch import nn, optim
 
 
+def merge_indices_and_masks(
+    all_task_indices, task_indices, all_task_masks, task_masks
+):
+    # take union of all_task_indices and task_indices
+    merge_mask = []
+    merge_indices = []
+    layer_sizes = [256, 128, 64, 10]
+    
+    for i in range(len(all_task_masks)):
+        if all_task_masks != []:
+            merge_mask.append(torch.logical_or(all_task_masks[i], task_masks[i]))
+
+        if all_task_indices != [[], [], [], []]:
+            common = torch.isin(
+                all_task_indices[i], task_indices[i]
+            )
+            common = all_task_indices[i][common]
+            merge_indices.append(
+                common
+            )
+    if all_task_masks == []:
+        merge_mask = task_masks
+    if all_task_indices == [[], [], [], []]:
+        merge_indices = task_indices
+        
+    return merge_indices, merge_mask
+
 def get_excess_neurons(indices1, indices2, layer_sizes=[256, 128, 64]):
     """
     Identifies neurons in each layer that are present in indices2 but not in indices1.
@@ -87,7 +114,7 @@ def forwardprop_and_backprop(
     optimizer=None,
     indices_old = None,
     task_id=None,
-    task1_parameters=None,
+    prev_parameters=None,
     rnn_gate=None,
 ):
     """
@@ -122,7 +149,6 @@ def forwardprop_and_backprop(
         scalers = None
         one_hot_target = torch.zeros(target.size(0), 10).to(device)
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
-            
         if not continual:
             indices_old = [None] * len(list_of_indexes)
   

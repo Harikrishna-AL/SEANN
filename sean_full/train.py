@@ -3,6 +3,7 @@ from utils import (
     get_merge_mask,
     calc_percentage_of_zero_grad,
     forwardprop_and_backprop,
+    merge_indices_and_masks,
 )
 from model import NN, RNNGate
 
@@ -15,17 +16,18 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 69  # verified
+seed = 49  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 
-
-data_loader_1, data_loader_2, test_loader_1, test_loader_2, test_loader = (
-    get_data_separate(batch_size=64)
+all_train_loaders, all_test_loaders = get_data_separate(
+    batch_size=64, num_tasks=5, max_classes=10
 )
+
 list_of_indexes = [[], [], [], []]
+layer_sizes = [256, 128, 64, 10]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 masks = [
     torch.ones(256).to(device),
@@ -34,7 +36,6 @@ masks = [
     torch.ones(10).to(device),
 ]
 
-
 original_model = NN(784, 10, indexes=list_of_indexes).to(device)
 rnn_gate = RNNGate(784, 10, 2).to(device)
 
@@ -42,112 +43,115 @@ all_model_params = list(original_model.parameters())
 # all_model_params.extend(rnn_gate.parameters())
 optimizer = optim.SGD(all_model_params, lr=0.1, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
-for i in range(10):
-    task1_indices, task1_masks, task1_model, optimizer = forwardprop_and_backprop(
-        original_model,
-        0.1,
-        data_loader_1,
-        list_of_indexes=list_of_indexes,
-        masks=masks,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        task_id=1,
-        rnn_gate=rnn_gate,
-    )
-    list_of_indexes = task1_indices
-    # print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))
 
-indices = []
-new_masks = []
-layer_sizes = [256, 128, 64, 10]
-for i in range(len(layer_sizes)):
-    indices.append(
-        torch.tensor(
-            [j for j in range(layer_sizes[i]) if j not in task1_indices[i]]
-        ).to(device)
-    )
-    mask = torch.tensor(
-        [1 if k in task1_indices[i] else 0 for k in range(layer_sizes[i])]
-    ).to(device)
-    new_masks.append(mask)
+all_task_indices = list_of_indexes
+all_task_masks = []
 
-print("Task 1 indices: ", task1_indices)
-print("Task 1 masks: ", task1_masks)
-print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task1_masks))
+all_masks = []
 
-task1_parameters = task1_model.linear
+for t in range(len(all_train_loaders)):
 
-print("### Task 2 ###")
-for i in range(10):
-    task2_indices, task2_masks, task2_model, optimizer = forwardprop_and_backprop(
-        task1_model,
-        0.1,
-        data_loader_2,
-        list_of_indexes=task1_indices,
-        masks=new_masks,
-        continual=True,
-        optimizer=None,
-        scheduler=scheduler,
-        indices_old=indices,
-        task_id=2,
-        task1_parameters=task1_parameters,
-        rnn_gate=rnn_gate,
-    )
-# print("Percentage of frozen neurons: ", calc_percentage_of_zero_grad(task2_masks))
-# print("percentage of zero gradients: ",calc_percentage_of_zero_grad(original_model))
-
-print("Task 2 indices: ", task2_indices)
-print("Task 2 masks: ", task2_masks)
-total_mask = get_merge_mask(task1_masks, task2_masks)
-print("Percentage of Total frozen neurons: ", calc_percentage_of_zero_grad(total_mask))
-print(
-    "Percentage of frozen neurons in task 2: ",
-    calc_percentage_of_zero_grad(task2_masks),
-)
-
-all_masks = [task1_masks, task2_masks]
-correct = 0
-accuracies = []
-original_model.eval()
-
-print("### Testing both Tasks using entropy as gating mechanism ###")
-for data, target in test_loader:
-    data = data.view(-1, 784).to(device)
-    target = target.to(device)
-
-    outputs = []
-    entropies = []
-
-    for mask in all_masks:
-        # Forward pass through the subnetwork defined by the mask
-        output, scalers, indices, masks, _ = original_model(
-            data, masks=mask, indices_old=[None] * len(mask)
+    print("### Task ", t + 1, " ###")
+    for i in range(10):
+        task_indices, task_masks, task_model, optimizer = forwardprop_and_backprop(
+            original_model,
+            0.1,
+            all_train_loaders[t],
+            list_of_indexes=list_of_indexes,
+            masks=masks,
+            optimizer=optimizer if t == 0 else None,
+            scheduler=scheduler,
+            task_id=t + 1,
+            rnn_gate=rnn_gate,
+            continual=False if t == 0 else True,
+            indices_old=None if t == 0 else indices_old,
+            prev_parameters=None if t == 0 else prev_parameters,
         )
-        outputs.append(output)
 
-        prob = output
-        # prob = F.softmax(output, dim=1)
-        entropy = -torch.sum(
-            prob * torch.log(prob + 1e-10), dim=1
-        )  # shape: (batch_size,)
-        entropies.append(entropy)
+    all_task_indices, all_task_masks = merge_indices_and_masks(
+        all_task_indices, task_indices, all_task_masks, task_masks
+    )  # merge the indices of the current task with the previous tasks
 
-    entropies = torch.stack(entropies, dim=0)  # (2, batch_size)
-    outputs = torch.stack(outputs, dim=0)  # (2, batch_size, num_classes)
+    indices_old = []
+    masks = []
 
-    # Choose output from network with minimum entropy for each sample
-    min_entropy_indices = torch.argmin(entropies, dim=0)  # shape: (batch_size,)
+    for i in range(len(layer_sizes)):
+        indices_old.append(
+            torch.tensor(
+                [j for j in range(layer_sizes[i]) if j not in all_task_indices[i]]
+            ).to(device)
+        )
+        mask = torch.tensor(
+            [1 if k in all_task_indices[i] else 0 for k in range(layer_sizes[i])]
+        ).to(device)
+        masks.append(mask)
 
-    batch_size = data.size(0)
-    final_preds = torch.zeros(batch_size, dtype=torch.long, device=device)
+    all_masks.append(task_masks)
 
-    for i in range(batch_size):
-        selected_output = outputs[min_entropy_indices[i], i]
-        final_preds[i] = selected_output.argmax()
+    print("Task ", t + 1, " indices: ", task_indices)
+    print("Task ", t + 1, " masks: ", task_masks)
+    print("Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks))
 
-    correct += final_preds.eq(target).sum().item()
+    prev_parameters = task_model.linear
 
-print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%")
+accuracies = []
+task_model.eval()
+
+for t in range(len(all_test_loaders)):
+    correct = 0
+    test_loader = all_test_loaders[t]
+    print("### Testing Task ", t + 1, " ###")
+    for data, target in test_loader:
+        data = data.view(-1, 784).to(device)
+        target = target.to(device)
+
+        output, scalers, indices, masks, _ = original_model(
+            data, masks=all_masks[t], indices_old=[None] * len(masks)
+        )
+        # check the accuracy
+        predicted = output.argmax(dim=1, keepdim=True)
+        correct += predicted.eq(target.view_as(predicted)).sum().item()
+    print(f"Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%")
+    accuracies.append(100 * correct / len(test_loader.dataset))
+
+# print("### Testing both Tasks using entropy as gating mechanism ###")
+# for data, target in test_loader:
+#     data = data.view(-1, 784).to(device)
+#     target = target.to(device)
+
+#     outputs = []
+#     entropies = []
+
+#     for mask in all_masks:
+#         # Forward pass through the subnetwork defined by the mask
+#         output, scalers, indices, masks, _ = original_model(
+#             data, masks=mask, indices_old=[None] * len(mask)
+#         )
+#         outputs.append(output)
+
+#         prob = output
+#         # prob = F.softmax(output, dim=1)
+#         entropy = -torch.sum(
+#             prob * torch.log(prob + 1e-10), dim=1
+#         )  # shape: (batch_size,)
+#         entropies.append(entropy)
+
+#     entropies = torch.stack(entropies, dim=0)  # (2, batch_size)
+#     outputs = torch.stack(outputs, dim=0)  # (2, batch_size, num_classes)
+
+#     # Choose output from network with minimum entropy for each sample
+#     min_entropy_indices = torch.argmin(entropies, dim=0)  # shape: (batch_size,)
+
+#     batch_size = data.size(0)
+#     final_preds = torch.zeros(batch_size, dtype=torch.long, device=device)
+
+#     for i in range(batch_size):
+#         selected_output = outputs[min_entropy_indices[i], i]
+#         final_preds[i] = selected_output.argmax()
+
+#     correct += final_preds.eq(target).sum().item()
+
+# print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%")
 
 
 # print("#### Testing both Tasks using RNN as gating mechanism ####")
@@ -174,60 +178,60 @@ print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%
 #     correct += final_preds.eq(target.view_as(outputs)).sum().item()
 # print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%")
 
-correct = 0
-for i, (data, target) in enumerate(test_loader):
-    data = data.view(-1, 784).to(device)
-    target = target.to(device)
+# correct = 0
+# for i, (data, target) in enumerate(test_loader):
+#     data = data.view(-1, 784).to(device)
+#     target = target.to(device)
 
-    activations = []
+#     activations = []
 
-    if i == 0:
-        layer1 = task1_model.linear[0]
-        activation1 = layer1(data)
-        for j in range(len(all_masks)):
-            activation1 = F.relu(activation1 * all_masks[j][0])
-            activations.append(
-                torch.sum(activation1, dim=1) / torch.sum(all_masks[j][0])
-            )
-        activations = torch.stack(activations, dim=0)
-        print("argmax of avg activation: ", torch.argmax(activations, dim=0))
-        print("activations: ", activations)
-        print("Target: ", target)
+#     if i == 0:
+#         layer1 = task1_model.linear[0]
+#         activation1 = layer1(data)
+#         for j in range(len(all_masks)):
+#             activation1 = F.relu(activation1 * all_masks[j][0])
+#             activations.append(
+#                 torch.sum(activation1, dim=1) / torch.sum(all_masks[j][0])
+#             )
+#         activations = torch.stack(activations, dim=0)
+#         print("argmax of avg activation: ", torch.argmax(activations, dim=0))
+#         print("activations: ", activations)
+#         print("Target: ", target)
 
-correct = 0
-print("### Testing Task 1###")
-task_id = 1
-for data, target in test_loader_1:
-    data = data.view(-1, 784)
-    data, target = data.to(device), target.to(device)
-    output, scalers, indices, masks, _ = task1_model(
-        data, masks=task1_masks, indices_old=[None] * len(indices)
-    )
-    # check the accuracy
-    predicted = output.argmax(dim=1, keepdim=True)
-    correct += predicted.eq(target.view_as(predicted)).sum().item()
+# correct = 0
+# print("### Testing Task 1###")
+# task_id = 1
+# for data, target in test_loader_1:
+#     data = data.view(-1, 784)
+#     data, target = data.to(device), target.to(device)
+#     output, scalers, indices, masks, _ = task1_model(
+#         data, masks=task1_masks, indices_old=[None] * len(indices)
+#     )
+#     # check the accuracy
+#     predicted = output.argmax(dim=1, keepdim=True)
+#     correct += predicted.eq(target.view_as(predicted)).sum().item()
 
-print(f"Accuracy for Task 1: {100* correct/len(test_loader_1.dataset)}%")
-accuracies.append(100 * correct / len(test_loader_1.dataset))
+# print(f"Accuracy for Task 1: {100* correct/len(test_loader_1.dataset)}%")
+# accuracies.append(100 * correct / len(test_loader_1.dataset))
 
-# task2_masks = get_merge_mask(task1_masks, task2_masks)
+# # task2_masks = get_merge_mask(task1_masks, task2_masks)
 
-correct = 0
-print("### Testing Task 2###")
-task_id = 2
-for data, target in test_loader_2:
-    data = data.view(-1, 784)
-    data, target = data.to(device), target.to(device)
-    output, scalers, indices, masks, _ = task2_model(
-        data, masks=task2_masks, indices_old=[None] * len(indices)
-    )
-    # check the accuracy
-    predicted = output.argmax(dim=1, keepdim=True)
-    # target = target % 5
-    correct += predicted.eq(target.view_as(predicted)).sum().item()
+# correct = 0
+# print("### Testing Task 2###")
+# task_id = 2
+# for data, target in test_loader_2:
+#     data = data.view(-1, 784)
+#     data, target = data.to(device), target.to(device)
+#     output, scalers, indices, masks, _ = task2_model(
+#         data, masks=task2_masks, indices_old=[None] * len(indices)
+#     )
+#     # check the accuracy
+#     predicted = output.argmax(dim=1, keepdim=True)
+#     # target = target % 5
+#     correct += predicted.eq(target.view_as(predicted)).sum().item()
 
-print(f"Accuracy for Task 2: {100* correct/len(test_loader_2.dataset)}%")
-accuracies.append(100 * correct / len(test_loader_2.dataset))
+# print(f"Accuracy for Task 2: {100* correct/len(test_loader_2.dataset)}%")
+# accuracies.append(100 * correct / len(test_loader_2.dataset))
 
 # layer1 = task2_model.linear[0]
 # #find out the principal direction of the weights of both the subnetworks
