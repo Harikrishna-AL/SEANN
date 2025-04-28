@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate
+# from data import get_data_separate
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
@@ -57,7 +57,7 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.2
+        self.percent_winner = 0.5
 
         self.linear = nn.ModuleList(
             [

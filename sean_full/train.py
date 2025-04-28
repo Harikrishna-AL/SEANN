@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate, get_domain_inc_data
+from data import get_MNIST_tasks, get_domain_inc_data, get_EMNIST_tasks, get_FashionMNIST_tasks
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
@@ -21,23 +21,24 @@ print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
+max_classes = 10
 
-all_train_loaders, all_test_loaders = get_data_separate(
-    batch_size=64, num_tasks=5, max_classes=10
+all_train_loaders, all_test_loaders = get_MNIST_tasks(
+    batch_size=64, num_tasks=2
 )
 
 list_of_indexes = [[], [], [], []]
-layer_sizes = [256, 128, 64, 10]
+layer_sizes = [256, 128, 64, max_classes]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 masks = [
     torch.ones(256).to(device),
     torch.ones(128).to(device),
     torch.ones(64).to(device),
-    torch.ones(10).to(device),
+    torch.ones(max_classes).to(device),
 ]
 
-original_model = NN(784, 10, indexes=list_of_indexes).to(device)
-rnn_gate = RNNGate(784, 10, 2).to(device)
+original_model = NN(784, max_classes, indexes=list_of_indexes).to(device)
+rnn_gate = RNNGate(784, max_classes, 2).to(device)
 
 all_model_params = list(original_model.parameters())
 # all_model_params.extend(rnn_gate.parameters())
@@ -66,10 +67,11 @@ for t in range(len(all_train_loaders)):
             continual=False if t == 0 else True,
             indices_old=None if t == 0 else indices_old,
             prev_parameters=None if t == 0 else prev_parameters,
+            max_classes=max_classes,
         )
 
     all_task_indices, all_task_masks = merge_indices_and_masks(
-        all_task_indices, task_indices, all_task_masks, task_masks
+        all_task_indices, task_indices, all_task_masks, task_masks, max_classes=max_classes
     )  # merge the indices of the current task with the previous tasks
 
     indices_old = []

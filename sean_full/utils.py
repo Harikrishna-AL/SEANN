@@ -4,12 +4,12 @@ from torch import nn, optim
 
 
 def merge_indices_and_masks(
-    all_task_indices, task_indices, all_task_masks, task_masks
+    all_task_indices, task_indices, all_task_masks, task_masks, max_classes=10
 ):
     # take union of all_task_indices and task_indices
     merge_mask = []
     merge_indices = []
-    layer_sizes = [256, 128, 64, 10]
+    layer_sizes = [256, 128, 64, max_classes]
     
     for i in range(len(all_task_masks)):
         if all_task_masks != []:
@@ -116,6 +116,7 @@ def forwardprop_and_backprop(
     task_id=None,
     prev_parameters=None,
     rnn_gate=None,
+    max_classes=10,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -147,7 +148,7 @@ def forwardprop_and_backprop(
         data = data.view(-1, 784)
         data, target = data.to(device), target.to(device)
         scalers = None
-        one_hot_target = torch.zeros(target.size(0), 10).to(device)
+        one_hot_target = torch.zeros(target.size(0), max_classes).to(device)
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
         if not continual:
             indices_old = [None] * len(list_of_indexes)
