@@ -166,8 +166,8 @@ def get_domain_inc_data(batch_size=128):
 
 
 
-def get_EMNIST_tasks(batch_size=128, num_tasks=10, max_classes=26):
-    """Returns 10 task loaders with grouped letters for automatic overlap"""
+def get_EMNIST_tasks(batch_size=128, num_tasks=2, max_classes=26):
+
     # EMNIST letters: 0-25=A-Z, 26-51=a-z
 
     # task_letter_groups = [
@@ -210,16 +210,18 @@ def get_EMNIST_tasks(batch_size=128, num_tasks=10, max_classes=26):
     all_train_data = []
     all_test_data = []
     
-    per_task = max_classes // num_tasks
+    per_task = max_classes // num_tasks # 13
 
     for i in range(per_task, max_classes + 1, per_task):
         task_train_data = []
         task_test_data = []
         for data, target in train_data:
+            target = target - 1  # Adjust target to be 0-indexed
             if i - per_task <= target < i:
                 task_train_data.append((data, target))
 
         for data, target in test_data:
+            target = target - 1  # Adjust target to be 0-indexed
             if i - per_task <= target < i:
                 task_test_data.append((data, target))
 

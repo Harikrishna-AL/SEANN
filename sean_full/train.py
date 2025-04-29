@@ -21,7 +21,7 @@ print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
-max_classes = 26
+max_classes = 26 # 10 for MNIST, 26 for EMNIST, 10 for FashionMNIST
 
 all_train_loaders, all_test_loaders = get_EMNIST_tasks(
     batch_size=64, num_tasks=2
