@@ -26,26 +26,23 @@ all_train_loaders, all_test_loaders = get_data_separate(
     batch_size=64, num_tasks=2, max_classes=10
 )
 
-list_of_indexes = [[], [], [], [], [], [], [], []]
-layer_sizes = [32, 64, 128, 256, 256, 128, 64, 10]
+list_of_indexes = [[], [], [], [], []]
+layer_sizes = [32, 32, 64, 256, 10]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 task_masks = [
     torch.ones(32).to(device),
+    torch.ones(32).to(device),
     torch.ones(64).to(device), 
-    torch.ones(128).to(device),
-    torch.ones(256).to(device), 
     torch.ones(256).to(device),
-    torch.ones(128).to(device),
-    torch.ones(64).to(device),
     torch.ones(10).to(device),
 ]
 
-task_model = NN(256, 10, indexes=list_of_indexes).to(device)
+task_model = NN(3*3*64, 10, indexes=list_of_indexes).to(device)
 rnn_gate = RNNGate(784, 10, 2).to(device)
 
 all_model_params = task_model.parameters()
 # all_model_params.extend(rnn_gate.parameters())
-optimizer = optim.SGD(all_model_params, lr=0.4, momentum=0.9)
+optimizer = optim.SGD(all_model_params, lr=0.03, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
 all_task_indices = list_of_indexes
@@ -150,7 +147,7 @@ for t in range(len(all_test_loaders)):
     test_loader = all_test_loaders[t]
     print("### Testing Task ", t + 1, " ###")
     for i, (data, target) in enumerate(test_loader):
-        data = data.view(-1, 784).to(device)
+        data = data.view(-1, 1, 28, 28).to(device)
         target = target.to(device)
         # inference_masks = []
         # for m in range(len(all_masks)):
