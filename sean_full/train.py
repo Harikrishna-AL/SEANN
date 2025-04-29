@@ -16,14 +16,14 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 49  # verified
+seed = 100  # verified
 print("Seed: ", seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
-max_classes = 10
+max_classes = 26
 
-all_train_loaders, all_test_loaders = get_MNIST_tasks(
+all_train_loaders, all_test_loaders = get_EMNIST_tasks(
     batch_size=64, num_tasks=2
 )
 
@@ -42,7 +42,7 @@ rnn_gate = RNNGate(784, max_classes, 2).to(device)
 
 all_model_params = list(original_model.parameters())
 # all_model_params.extend(rnn_gate.parameters())
-optimizer = optim.SGD(all_model_params, lr=0.1, momentum=0.9)
+optimizer = optim.SGD(all_model_params, lr=0.4, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
 all_task_indices = list_of_indexes

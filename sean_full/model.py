@@ -237,10 +237,19 @@ class NN(nn.Module):
             all_indices = torch.arange(x_size, device=y.device)
             indices_non_winners = all_indices[hebbian_mask.squeeze(0) == 0] # Select indices where mask is 0
 
-            scale = torch.zeros_like(gd_layer.weight.data) # Shape: (output_size, input_size)
-
+            # scale = torch.zeros_like(gd_layer.weight.data) # Shape: (output_size, input_size)
+            scale = normalized_modified_weights[topk_indices_hebbian]
+            scale_min = torch.min(scale)
+            scale = scale_min * torch.ones_like(gd_layer.weight.data) # Shape: (output_size, input_size)
+            
             if num_winners > 0:
-                 scale[topk_indices_hebbian] = normalized_modified_weights[topk_indices_hebbian]
+                scale[topk_indices_hebbian] = normalized_modified_weights[topk_indices_hebbian]
+                scale_max = torch.max(scale)
+                 #normalize scale between 0 and 1
+                if scale_max - scale_min > 1e-8:
+                    scale = (scale - scale_min) / (scale_max - scale_min)
+                else:
+                    scale = torch.zeros_like(gd_layer.weight.data)
 
             return scale, indices_non_winners, hebbian_mask, common_indices
 
