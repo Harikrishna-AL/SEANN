@@ -141,10 +141,11 @@ def forwardprop_and_backprop(
 
     loss_total = 0
     model.train()
-
+    # scalers = None
+    
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        data = data.view(-1, 784)
+        data = data.view(-1, 1, 28, 28).to(device)
         data, target = data.to(device), target.to(device)
         scalers = None
         one_hot_target = torch.zeros(target.size(0), 10).to(device)
@@ -179,7 +180,7 @@ def forwardprop_and_backprop(
         #         ewc_loss += torch.sum(
         #             torch.pow(
         #                 model.linear[i].weight[common_indices[i]]
-        #                 - task1_parameters[i].weight[common_indices[i]],
+        #                 - prev_parameters[i].weight[common_indices[i]],
         #                 2,
         #             )
         #         )
