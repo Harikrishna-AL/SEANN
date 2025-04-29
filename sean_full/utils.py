@@ -141,13 +141,13 @@ def forwardprop_and_backprop(
 
     loss_total = 0
     model.train()
-    # scalers = None
+    scalers = None
     
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
         data = data.view(-1, 1, 28, 28).to(device)
         data, target = data.to(device), target.to(device)
-        scalers = None
+        # scalers = None
         one_hot_target = torch.zeros(target.size(0), 10).to(device)
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
         if not continual:

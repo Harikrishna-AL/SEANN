@@ -546,6 +546,8 @@ class NN(nn.Module):
         
         # scale = torch.ones_like(scale)
         # activation_mask = torch.ones_like(activation_mask)
+        # use mean to make scale as (out_channels, in_channels)
+        scale = scale.mean(dim=(2, 3), keepdim=True) # Shape: (C_out, 1, 1)
 
         return scale, indices_non_winners, activation_mask, common_indices
         
