@@ -252,10 +252,6 @@ class NN(nn.Module):
             if num_winners > 0:
                 _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
                 if indices_old is not None:
-                    # all_indices = torch.arange(x_size, device=y.device)
-                    # is_allowed = ~torch.isin(all_indices, indices_old.long())
-                    # allowed_indices = all_indices[is_allowed]
-                    # indices_old = allowed_indices
                     common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_indices]
                     if len(common_indices) > int(0.5 * num_winners):
@@ -542,12 +538,7 @@ class NN(nn.Module):
         indices_non_winners = all_indices[~winner_mask_1d]
         
         activation_mask = activation_mask.view(out_channels)
-        
-        # scale = torch.ones_like(scale)
-        # activation_mask = torch.ones_like(activation_mask)
-        # use mean to make scale as (out_channels, in_channels)
-        scale = scale.mean(dim=(2, 3), keepdim=True) # Shape: (C_out, 1, 1)
-
+    
         return scale, indices_non_winners, activation_mask, common_indices
         
 
@@ -562,8 +553,6 @@ class NN(nn.Module):
             function: Hook function for modifying gradients during backpropagation.
         """
         def hook(grad):
-            # print(f"Grad shape: {grad.shape}")
-            # print(f"Scaler shape: {scalers.shape}")
             if len(scalers) > 0:
                 grad *= scalers
             return grad

@@ -42,7 +42,7 @@ rnn_gate = RNNGate(784, 10, 2).to(device)
 
 all_model_params = task_model.parameters()
 # all_model_params.extend(rnn_gate.parameters())
-optimizer = optim.SGD(all_model_params, lr=0.03, momentum=0.9)
+optimizer = optim.SGD(all_model_params, lr=0.1, momentum=0.9)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
 all_task_indices = list_of_indexes
