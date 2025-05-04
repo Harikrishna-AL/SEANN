@@ -61,17 +61,20 @@ class NN(nn.Module):
         
         self.conv_layers = nn.ModuleList(
             [
-                nn.Conv2d(1, 32, kernel_size=5),
-                nn.Conv2d(32, 32, kernel_size=5),
-                nn.Conv2d(32, 64, kernel_size=5),
+                nn.Conv2d(3, 32, kernel_size=3, padding=1),
+                nn.Conv2d(32, 64, kernel_size=3, padding=1),
+                nn.Conv2d(64, 128, kernel_size=3, padding=1),
+                nn.Conv2d(128, 256, kernel_size=3, padding=1),
+                nn.Conv2d(256, 256, kernel_size=3, padding=1),
             ]
         )
         # self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
         self.linear = nn.ModuleList(
             [
-                nn.Linear(input_size, 256),
-                nn.Linear(256, output_size),
+                nn.Linear(input_size, 1024),
+                nn.Linear(1024, 512),
+                nn.Linear(512, output_size),
             ]
         )
 
@@ -90,9 +93,9 @@ class NN(nn.Module):
             heb_param.weight.requires_grad = False
 
         self.indexes = indexes
-        self.hidden_size_array = [256, output_size]
+        self.hidden_size_array = [1024, 512, output_size]
         
-        self.conv_size_array = [32, 32, 64]
+        self.conv_size_array = [32, 64, 128, 256, 256]
 
         # if indexes != [[], [], []]:
         #     self._register_gradient_hooks(self.indexes)
@@ -113,7 +116,6 @@ class NN(nn.Module):
         """
             
         if scalers is not None:
-            # scalers_conv.extend(scalers)
             self.update_indexes(scalers)
 
         hebbian_scores = []
@@ -123,15 +125,20 @@ class NN(nn.Module):
         
         for i, layer in enumerate(self.conv_layers):
             x1 = layer(x)
-            if i != 0:
-                x1 = nn.MaxPool2d(kernel_size=2)(x1)
+            if i % 2 !=  0:
+                x1 = F.relu(x1, inplace=True)
+                x1 = nn.MaxPool2d(kernel_size=2, stride=2)(x1)
+            else:
+                batch_norm = nn.BatchNorm2d(self.conv_size_array[i]).to(device=x.device)
+                x1 = batch_norm(x1)
+                x1 = F.relu(x1, inplace=True)
             # x1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)(x1)
             # print(x1.shape)
             # print(masks[i].shape)
             if masks is not None:
                 x1 = torch.mul(x1, masks[i].view(1, -1, 1, 1))
                 
-            x1 = F.relu(x1)
+            # x1 = F.relu(x1)
             
             
             if selection_method == "hebbian":
@@ -156,17 +163,17 @@ class NN(nn.Module):
             is_final_layer = (i == len(self.linear) - 1)
             
             if masks is not None: # check later why multiplying the mask of the last layer as well causes a drop is accuracy values.
-                x1 = torch.mul(x1, masks[i+3])
+                x1 = torch.mul(x1, masks[i+len(self.conv_size_array)])
                 
             x1 = F.relu(x1) if not is_final_layer else x1
 
             if selection_method == "hebbian":
                 hebbian_score, hebbian_index, hebbian_mask, common_index = self.hebbian_update(
-                    x, x1, i, indices_old=indices_old[i + 3], target=target if is_final_layer else None
+                    x, x1, i, indices_old=indices_old[i + len(self.conv_size_array)], target=target if is_final_layer else None
                 )
             elif selection_method == "random":
                 hebbian_score, hebbian_index, hebbian_mask, common_index = self.random_selection(
-                    x, x1, i, indices_old=indices_old[i+3], target=target if is_final_layer else None
+                    x, x1, i, indices_old=indices_old[i+len(self.conv_size_array)], target=target if is_final_layer else None
                 )
             else:
                 raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
@@ -599,7 +606,7 @@ class NN(nn.Module):
             # Check if the layer already has hooks registered and clear them if they exist
             if layer.weight._backward_hooks is not None:
                 layer.weight._backward_hooks.clear()
-            layer.weight.register_hook(self.scale_grad(indexes[i+3]))
+            layer.weight.register_hook(self.scale_grad(indexes[i+len(self.conv_size_array)]))
 
     def update_indexes(self, new_indexes):
         """

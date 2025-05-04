@@ -15,7 +15,7 @@ def merge_indices_and_masks(
         if all_task_masks != []:
             merge_mask.append(torch.logical_or(all_task_masks[i], task_masks[i]))
 
-        if all_task_indices != [[], [], [], [], []]:
+        if all_task_indices != [[], [], [], [], [], [], [], []]:
             common = torch.isin(
                 all_task_indices[i], task_indices[i]
             )
@@ -25,7 +25,7 @@ def merge_indices_and_masks(
             )
     if all_task_masks == []:
         merge_mask = task_masks
-    if all_task_indices == [[], [], [], [], []]:
+    if all_task_indices == [[], [], [], [], [], [], [], []]:
         merge_indices = task_indices
         
     return merge_indices, merge_mask
@@ -145,7 +145,7 @@ def forwardprop_and_backprop(
     
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        data = data.view(-1, 1, 28, 28).to(device)
+        data = data.view(-1, 3, 32, 32).to(device)
         data, target = data.to(device), target.to(device)
         # scalers = None
         one_hot_target = torch.zeros(target.size(0), 10).to(device)
@@ -195,3 +195,4 @@ def forwardprop_and_backprop(
 
     print("Avg loss: ", loss_total / len(data_loader))
     return list_of_indexes, masks, model, optimizer
+
