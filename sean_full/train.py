@@ -16,105 +16,137 @@ from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
 
-seed = 100  # verified
-print("Seed: ", seed)
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
-max_classes = 26 # 10 for MNIST, 26 for EMNIST, 10 for FashionMNIST
+# seed = 100  # verified
+# print("Seed: ", seed)
+# torch.manual_seed(seed)
+# torch.cuda.manual_seed(seed)
+# torch.cuda.manual_seed_all(seed)
+max_classes = 10
 
-all_train_loaders, all_test_loaders = get_EMNIST_tasks(
-    batch_size=64, num_tasks=2
+all_train_loaders, all_test_loaders = get_MNIST_tasks(
+    batch_size=64, num_tasks=5
 )
 
-list_of_indexes = [[], [], [], []]
-layer_sizes = [256, 128, 64, max_classes]
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-masks = [
-    torch.ones(256).to(device),
-    torch.ones(128).to(device),
-    torch.ones(64).to(device),
-    torch.ones(max_classes).to(device),
-]
+seeds = [100, 200, 300, 400, 500]  # verified
+all_accuracies = []
 
-original_model = NN(784, max_classes, indexes=list_of_indexes).to(device)
-rnn_gate = RNNGate(784, max_classes, 2).to(device)
+for seed in seeds:
+    print("Seed: ", seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
-all_model_params = list(original_model.parameters())
-# all_model_params.extend(rnn_gate.parameters())
-optimizer = optim.SGD(all_model_params, lr=0.4, momentum=0.9)
-scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
+    list_of_indexes = [[], [], [], []]
+    layer_sizes = [256, 128, 64, max_classes]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    masks = [
+        torch.ones(256).to(device),
+        torch.ones(128).to(device),
+        torch.ones(64).to(device),
+        torch.ones(max_classes).to(device),
+    ]
 
-all_task_indices = list_of_indexes
-all_task_masks = []
+    original_model = NN(784, max_classes, indexes=list_of_indexes).to(device)
+    rnn_gate = RNNGate(784, max_classes, 2).to(device)
 
-all_masks = []
+    all_model_params = list(original_model.parameters())
+    # all_model_params.extend(rnn_gate.parameters())
+    optimizer = optim.SGD(all_model_params, lr=0.1, momentum=0.9)
+    scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
-for t in range(len(all_train_loaders)):
+    all_task_indices = list_of_indexes
+    all_task_masks = []
 
-    print("### Task ", t + 1, " ###")
-    for i in range(10):
-        task_indices, task_masks, task_model, optimizer = forwardprop_and_backprop(
-            original_model,
-            0.1,
-            all_train_loaders[t],
-            list_of_indexes=list_of_indexes,
-            masks=masks,
-            optimizer=optimizer if t == 0 else None,
-            scheduler=scheduler,
-            task_id=t + 1,
-            rnn_gate=rnn_gate,
-            continual=False if t == 0 else True,
-            indices_old=None if t == 0 else indices_old,
-            prev_parameters=None if t == 0 else prev_parameters,
-            max_classes=max_classes,
-        )
+    all_masks = []
 
-    all_task_indices, all_task_masks = merge_indices_and_masks(
-        all_task_indices, task_indices, all_task_masks, task_masks, max_classes=max_classes
-    )  # merge the indices of the current task with the previous tasks
+    for t in range(len(all_train_loaders)):
 
-    indices_old = []
-    masks = []
+        print("### Task ", t + 1, " ###")
+        for i in range(10):
+            task_indices, task_masks, task_model, optimizer = forwardprop_and_backprop(
+                original_model,
+                0.1,
+                all_train_loaders[t],
+                list_of_indexes=list_of_indexes,
+                masks=masks,
+                optimizer=optimizer if t == 0 else None,
+                scheduler=scheduler,
+                task_id=t + 1,
+                rnn_gate=rnn_gate,
+                continual=False if t == 0 else True,
+                indices_old=None if t == 0 else indices_old,
+                prev_parameters=None if t == 0 else prev_parameters_list,
+                max_classes=max_classes,
+            )
 
-    for i in range(len(layer_sizes)):
-        indices_old.append(
-            torch.tensor(
-                [j for j in range(layer_sizes[i]) if j not in all_task_indices[i]]
+        all_task_indices, all_task_masks = merge_indices_and_masks(
+            all_task_indices, task_indices, all_task_masks, task_masks, max_classes=max_classes
+        )  # merge the indices of the current task with the previous tasks
+
+        indices_old = []
+        masks = []
+
+        for i in range(len(layer_sizes)):
+            indices_old.append(
+                torch.tensor(
+                    [j for j in range(layer_sizes[i]) if j not in all_task_indices[i]]
+                ).to(device)
+            )
+            mask = torch.tensor(
+                [1 if k in all_task_indices[i] else 0 for k in range(layer_sizes[i])]
             ).to(device)
-        )
-        mask = torch.tensor(
-            [1 if k in all_task_indices[i] else 0 for k in range(layer_sizes[i])]
-        ).to(device)
-        masks.append(mask)
+            masks.append(mask)
 
-    all_masks.append(task_masks)
+        all_masks.append(task_masks)
 
-    print("Task ", t + 1, " indices: ", task_indices)
-    print("Task ", t + 1, " masks: ", task_masks)
-    print("Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks))
+        print("Task ", t + 1, " indices: ", task_indices)
+        print("Task ", t + 1, " masks: ", task_masks)
+        print("Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks))
 
-    prev_parameters = task_model.linear
+        prev_parameters = task_model.linear
+        prev_parameters_list = []
+        for i in range(len(prev_parameters)):
+            prev_parameters_list.append(prev_parameters[i].weight.data.clone())
+            
+        
 
-accuracies = []
-task_model.eval()
+    accuracies = []
+    task_model.eval()
 
-for t in range(len(all_test_loaders)):
-    correct = 0
-    test_loader = all_test_loaders[t]
-    print("### Testing Task ", t + 1, " ###")
-    for data, target in test_loader:
-        data = data.view(-1, 784).to(device)
-        target = target.to(device)
+    for t in range(len(all_test_loaders)):
+        correct = 0
+        test_loader = all_test_loaders[t]
+        print("### Testing Task ", t + 1, " ###")
+        for data, target in test_loader:
+            data = data.view(-1, 784).to(device)
+            target = target.to(device)
 
-        output, scalers, indices, masks, _ = original_model(
-            data, masks=all_masks[t], indices_old=[None] * len(masks)
-        )
-        # check the accuracy
-        predicted = output.argmax(dim=1, keepdim=True)
-        correct += predicted.eq(target.view_as(predicted)).sum().item()
-    print(f"Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%")
-    accuracies.append(100 * correct / len(test_loader.dataset))
+            output, scalers, indices, masks, _ = original_model(
+                data, masks=all_masks[t], indices_old=[None] * len(masks)
+            )
+            # check the accuracy
+            predicted = output.argmax(dim=1, keepdim=True)
+            correct += predicted.eq(target.view_as(predicted)).sum().item()
+        print(f"Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%")
+        accuracies.append(100 * correct / len(test_loader.dataset))
+    all_accuracies.append(torch.tensor(accuracies).to(device))
+    
+all_accuracies = torch.stack(all_accuracies, dim=0)
+avg_accuracies = torch.mean(all_accuracies, dim=0)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+#plot bar graph of accuracies for all the tasks
+x = np.arange(len(avg_accuracies))
+plt.bar(x, avg_accuracies.cpu().numpy(), color='blue')
+plt.xticks(x, [f'Task {i+1}' for i in range(len(avg_accuracies))])
+plt.xlabel('Tasks')
+plt.ylabel('Accuracy')
+plt.title('Average Accuracy for Each Task')
+plt.ylim(0, 100)
+plt.show()
+
 
 # print("### Testing both Tasks using entropy as gating mechanism ###")
 # for data, target in test_loader:

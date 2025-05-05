@@ -174,18 +174,19 @@ def forwardprop_and_backprop(
         #     target = target % 5
             
         loss = criterion(output, target) 
-        # if common_indices is not None:
-        #     #add ewc loss to the main loss
-        #     ewc_loss = 0
-        #     for i in range(len(common_indices)):
-        #         ewc_loss += torch.sum(
-        #             torch.pow(
-        #                 model.linear[i].weight[common_indices[i]]
-        #                 - task1_parameters[i].weight[common_indices[i]],
-        #                 2,
-        #             )
-        #         )
-        #     loss += 0.5 * ewc_loss
+        # print(common_indices)
+        if common_indices is not None:
+            #add ewc loss to the main loss
+            ewc_loss = 0
+            for i in range(len(common_indices)):
+                ewc_loss += torch.sum(
+                    torch.pow(
+                        model.linear[i].weight[common_indices[i]]
+                        - prev_parameters[i][common_indices[i]],
+                        2,
+                    )
+                )
+            loss += 0.5 * ewc_loss
         
                     
         loss.backward()

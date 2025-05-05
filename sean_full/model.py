@@ -57,7 +57,7 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.5
+        self.percent_winner = 0.2
 
         self.linear = nn.ModuleList(
             [
@@ -219,7 +219,7 @@ class NN(nn.Module):
                     common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_indices]
                     if len(common_indices) > int(0.5 * num_winners):
-                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(0.5*num_winners)], float('-inf'))
+                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(0.25*num_winners)], float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                     else:
                         hebbian_scores = hebbian_scores.scatter(0, common_indices, float('-inf'))
