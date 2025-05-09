@@ -152,11 +152,11 @@ def forwardprop_and_backprop(
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
         if not continual:
             indices_old = [None] * len(list_of_indexes)
-  
+
             output, scalers, list_of_indexes, masks, common_indices = model(
                 data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target, selection_method="hebbian",
             )
-  
+
         else:
             output, scalers, list_of_indexes, masks, common_indices = model(
                 data,
@@ -190,6 +190,7 @@ def forwardprop_and_backprop(
         loss.backward()
         optimizer.step()
         loss_total += loss.item()
+
 
     scheduler.step()
 

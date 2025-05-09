@@ -17,7 +17,9 @@ from torch.optim.lr_scheduler import StepLR
 
 
 seed = 10  # verified
-seeds = [10, 20, 30, 40, 50]
+seeds = [10]
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device: ", device)
 # seeds = [10]
 # print("Seed: ", seed)
 # torch.manual_seed(seed)

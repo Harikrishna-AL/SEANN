@@ -59,41 +59,65 @@ class NN(nn.Module):
         self.inhibition_strength = inhibition_strength
         self.percent_winner = 0.5
         
-        self.conv_layers = nn.ModuleList(
+        self.layers = nn.ModuleList(
             [
                 nn.Conv2d(3, 32, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(kernel_size=2, stride=2),
                 nn.Conv2d(32, 64, kernel_size=3, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(inplace=True),
                 nn.Conv2d(64, 128, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(kernel_size=2, stride=2),
                 nn.Conv2d(128, 256, kernel_size=3, padding=1),
+                nn.BatchNorm2d(256),
+                nn.ReLU(inplace=True),
                 nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            ]
-        )
-        # self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-
-        self.linear = nn.ModuleList(
-            [
+                nn.Flatten(),
                 nn.Linear(input_size, 1024),
+                nn.ReLU(inplace=True),
                 nn.Linear(1024, 512),
+                nn.ReLU(inplace=True),
                 nn.Linear(512, output_size),
             ]
         )
+        
+        # self.conv_layers = nn.ModuleList(
+        #     [
+        #         nn.Conv2d(3, 32, kernel_size=3, padding=1),
+        #         nn.Conv2d(32, 64, kernel_size=3, padding=1),
+        #         nn.Conv2d(64, 128, kernel_size=3, padding=1),
+        #         nn.Conv2d(128, 256, kernel_size=3, padding=1),
+        #         nn.Conv2d(256, 256, kernel_size=3, padding=1),
+        #     ]
+        # )
+        # # self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
-        # Define the Hebbian parameters corresponding to each layer
-        self.hebb_params = nn.ModuleList(
-            [
-                nn.Linear(input_size, 256, bias=False),
-                nn.Linear(256, 128, bias=False),
-                nn.Linear(128, 64, bias=False),
-                nn.Linear(64, output_size, bias=False),
-            ]
-        )
+        # self.linear = nn.ModuleList(
+        #     [
+        #         nn.Linear(input_size, 1024),
+        #         nn.Linear(1024, 512),
+        #         nn.Linear(512, output_size),
+        #     ]
+        # )
 
-        for i, heb_param in enumerate(self.hebb_params):
-            nn.init.kaiming_normal_(heb_param.weight)
-            heb_param.weight.requires_grad = False
+        # # Define the Hebbian parameters corresponding to each layer
+        # self.hebb_params = nn.ModuleList(
+        #     [
+        #         nn.Linear(input_size, 256, bias=False),
+        #         nn.Linear(256, 128, bias=False),
+        #         nn.Linear(128, 64, bias=False),
+        #         nn.Linear(64, output_size, bias=False),
+        #     ]
+        # )
+
+        # for i, heb_param in enumerate(self.hebb_params):
+        #     nn.init.kaiming_normal_(heb_param.weight)
+        #     heb_param.weight.requires_grad = False
 
         self.indexes = indexes
-        self.hidden_size_array = [1024, 512, output_size]
+        self.hidden_size_array = [32, 64, 128, 256, 256, 1024, 512, output_size]
         
         self.conv_size_array = [32, 64, 128, 256, 256]
 
@@ -123,73 +147,57 @@ class NN(nn.Module):
         hebbian_indices = []
         common_indices = []
         
-        for i, layer in enumerate(self.conv_layers):
-            x1 = layer(x)
-            if i % 2 !=  0:
-                x1 = F.relu(x1, inplace=True)
-                x1 = nn.MaxPool2d(kernel_size=2, stride=2)(x1)
-            else:
-                batch_norm = nn.BatchNorm2d(self.conv_size_array[i]).to(device=x.device)
-                x1 = batch_norm(x1)
-                x1 = F.relu(x1, inplace=True)
-            # x1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)(x1)
-            # print(x1.shape)
-            # print(masks[i].shape)
-            if masks is not None:
-                x1 = torch.mul(x1, masks[i].view(1, -1, 1, 1))
+        idx = 0
+        
+        for i, layer in enumerate(self.layers):
+            is_final_layer = (i == len(self.layers) - 1)
+            if isinstance(layer, nn.Conv2d):
+                x1 = layer(x)
+                if masks is not None:
+                    x1 = torch.mul(x1, masks[idx].view(1, -1, 1, 1))
                 
-            # x1 = F.relu(x1)
-            
-            
-            if selection_method == "hebbian":
-                scale, non_winners, hebbian_mask, common_index = self._calculate_hebbian_conv(
-                    x, x1, i, indices_old=indices_old[i]
-                )
+                if selection_method == "hebbian":
+                    hebbian_score, hebbian_index, hebbian_mask, common_index = self._calculate_hebbian_conv(
+                        x, x1, i, indices_old=indices_old[idx]
+                    )
+                else:
+                    raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
                 
-            else:
-                raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
+                idx += 1
+                
+                hebbian_scores.append(hebbian_score)
+                hebbian_masks.append(hebbian_mask)
+                hebbian_indices.append(hebbian_index)
+                if common_index is not None:
+                    common_indices.append(common_index)
+                
+                    
+            if isinstance(layer, nn.Linear):
+                x1 = layer(x)
+                if masks is not None:
+                    x1 = torch.mul(x1, masks[idx])
             
-            hebbian_scores.append(scale)
-            hebbian_masks.append(hebbian_mask)
-            hebbian_indices.append(non_winners)
-            if common_index is not None:
-                common_indices.append(common_index)
+                if selection_method == "hebbian":
+                    hebbian_score, hebbian_index, hebbian_mask, common_index = self.hebbian_update(
+                        x, x1, i, indices_old=indices_old[idx], target=target if is_final_layer else None
+                    )
+                else:
+                    raise ValueError("Invalid selection method. Choose 'hebbian'")
+                idx += 1
+                
+                hebbian_scores.append(hebbian_score)
+                hebbian_masks.append(hebbian_mask)
+                hebbian_indices.append(hebbian_index)
+                if common_index is not None:
+                    common_indices.append(common_index)
+            else:
+                x1 = layer(x)
+                    
             x = x1
-        
-        x = x.flatten(start_dim=1)
-        
-        for i, layer in enumerate(self.linear):
-            x1 = layer(x)
-            is_final_layer = (i == len(self.linear) - 1)
             
-            if masks is not None: # check later why multiplying the mask of the last layer as well causes a drop is accuracy values.
-                x1 = torch.mul(x1, masks[i+len(self.conv_size_array)])
-                
-            x1 = F.relu(x1) if not is_final_layer else x1
-
-            if selection_method == "hebbian":
-                hebbian_score, hebbian_index, hebbian_mask, common_index = self.hebbian_update(
-                    x, x1, i, indices_old=indices_old[i + len(self.conv_size_array)], target=target if is_final_layer else None
-                )
-            elif selection_method == "random":
-                hebbian_score, hebbian_index, hebbian_mask, common_index = self.random_selection(
-                    x, x1, i, indices_old=indices_old[i+len(self.conv_size_array)], target=target if is_final_layer else None
-                )
-            else:
-                raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
-
-            hebbian_scores.append(hebbian_score)
-            hebbian_masks.append(hebbian_mask)
-            hebbian_indices.append(hebbian_index)
-            if common_index is not None:
-                common_indices.append(common_index)            
-
-            x = x1
-        
         x = nn.Softmax(dim=1)(x)
-
         return x, hebbian_scores, hebbian_indices, hebbian_masks, common_indices
-
+            
     def hebb_forward(self, x, indexes=None):
         hebbian_scores = [] 
         hebbian_masks = []
@@ -216,9 +224,12 @@ class NN(nn.Module):
         Handles final layer differently using the one-hot target.
         """
 
-        gd_layer = self.linear[layer_idx]
-        x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
-
+        gd_layer = self.layers[layer_idx]
+        # x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
+        x_size = y.size(1) # Size of the output dimension of the layer
+        # print("x_=size", x_size)
+        # print(x.shape)
+        # print(y.shape)
         batch_size = x.size(0)
         common_indices = None
 
@@ -300,7 +311,7 @@ class NN(nn.Module):
 
 
         else:
-            x_size = self.hidden_size_array[layer_idx] # Size of the output dimension of the layer
+            x_size = y.shape[1] # Size of the output dimension of the layer
             if target is None:
                  print("Warning: Target is None for final layer Hebbian update.")
                  scale_output = torch.zeros_like(gd_layer.weight.data)
@@ -427,8 +438,9 @@ class NN(nn.Module):
     
     def _calculate_hebbian_conv(self, x, y, layer_idx, lr=0.00005, indices_old=None):
         """ Calculates Hebbian scores/masks/scales for a CONV layer. """
-        gd_layer = self.conv_layers[layer_idx] # Get the Conv2d layer
-        out_channels = self.conv_size_array[layer_idx]
+        gd_layer = self.layers[layer_idx] # Get the Conv2d layer
+        # out_channels = self.conv_size_array[layer_idx]
+        out_channels = y.shape[1]
         in_channels = gd_layer.weight.shape[1]
         kH, kW = gd_layer.kernel_size
         batch_size = x.size(0)
@@ -597,16 +609,25 @@ class NN(nn.Module):
             indexes (list): List of neuron indices to freeze during gradient updates.
         """
         
-        for i, layer in enumerate(self.conv_layers):
-            if layer.weight._backward_hooks is not None:
-                layer.weight._backward_hooks.clear()
-            layer.weight.register_hook(self.scale_grad(indexes[i]))
+        # for i, layer in enumerate(self.conv_layers):
+        #     if layer.weight._backward_hooks is not None:
+        #         layer.weight._backward_hooks.clear()
+        #     layer.weight.register_hook(self.scale_grad(indexes[i]))
             
-        for i, layer in enumerate(self.linear):
-            # Check if the layer already has hooks registered and clear them if they exist
-            if layer.weight._backward_hooks is not None:
-                layer.weight._backward_hooks.clear()
-            layer.weight.register_hook(self.scale_grad(indexes[i+len(self.conv_size_array)]))
+        # for i, layer in enumerate(self.linear):
+        #     # Check if the layer already has hooks registered and clear them if they exist
+        #     if layer.weight._backward_hooks is not None:
+        #         layer.weight._backward_hooks.clear()
+        #     layer.weight.register_hook(self.scale_grad(indexes[i+len(self.conv_size_array)]))
+
+        idx = 0
+        for i, layer in enumerate(self.layers):
+            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
+                
+                if layer.weight._backward_hooks is not None:
+                    layer.weight._backward_hooks.clear()
+                layer.weight.register_hook(self.scale_grad(indexes[idx]))
+                idx += 1
 
     def update_indexes(self, new_indexes):
         """
