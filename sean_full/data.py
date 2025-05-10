@@ -26,6 +26,7 @@ def get_data(batch_size=128):
     )
     return train_loader, test_loader
 
+
 def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
     train_data = torchvision.datasets.CIFAR10(
         root="../../data",
@@ -39,10 +40,10 @@ def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
         download=True,
         transform=torchvision.transforms.ToTensor(),
     )
-    
+
     all_train_data = []
     all_test_data = []
-    
+
     per_task = max_classes // num_tasks
     for i in range(per_task, max_classes + 1, per_task):
         task_train_data = []
@@ -64,11 +65,10 @@ def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
 
         all_train_data.append(train_loader)
         all_test_data.append(test_loader)
-        
-    return all_train_data, all_test_data
-    
 
-    
+    return all_train_data, all_test_data
+
+
 # make a function that gives a mnist dataloader that gives a continous data of only classes 0-4 and after that 5-9
 def get_data_separate(batch_size=128, num_tasks=2, max_classes=10):
     train_data = torchvision.datasets.MNIST(
@@ -86,7 +86,7 @@ def get_data_separate(batch_size=128, num_tasks=2, max_classes=10):
 
     all_train_data = []
     all_test_data = []
-    
+
     per_task = max_classes // num_tasks
 
     for i in range(per_task, max_classes + 1, per_task):

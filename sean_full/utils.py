@@ -4,18 +4,17 @@ from torch import nn, optim
 
 
 def merge_indices_and_masks(
-    all_task_indices, task_indices, all_task_masks, task_masks
+    all_task_indices, task_indices, all_task_masks, task_masks, layer_sizes
 ):
     # take union of all_task_indices and task_indices
     merge_mask = []
     merge_indices = []
-    # layer_sizes = [256, 128, 64, 10]
     
     for i in range(len(all_task_masks)):
         if all_task_masks != []:
             merge_mask.append(torch.logical_or(all_task_masks[i], task_masks[i]))
 
-        if all_task_indices != [[], [], [], [], [], [], [], []]:
+        if all_task_indices != [[]] * len(layer_sizes):
             common = torch.isin(
                 all_task_indices[i], task_indices[i]
             )
@@ -25,7 +24,7 @@ def merge_indices_and_masks(
             )
     if all_task_masks == []:
         merge_mask = task_masks
-    if all_task_indices == [[], [], [], [], [], [], [], []]:
+    if all_task_indices == [[]] * len(layer_sizes):
         merge_indices = task_indices
         
     return merge_indices, merge_mask

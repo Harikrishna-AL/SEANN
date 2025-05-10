@@ -82,47 +82,8 @@ class NN(nn.Module):
                 nn.Linear(512, output_size),
             ]
         )
-        
-        # self.conv_layers = nn.ModuleList(
-        #     [
-        #         nn.Conv2d(3, 32, kernel_size=3, padding=1),
-        #         nn.Conv2d(32, 64, kernel_size=3, padding=1),
-        #         nn.Conv2d(64, 128, kernel_size=3, padding=1),
-        #         nn.Conv2d(128, 256, kernel_size=3, padding=1),
-        #         nn.Conv2d(256, 256, kernel_size=3, padding=1),
-        #     ]
-        # )
-        # # self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-
-        # self.linear = nn.ModuleList(
-        #     [
-        #         nn.Linear(input_size, 1024),
-        #         nn.Linear(1024, 512),
-        #         nn.Linear(512, output_size),
-        #     ]
-        # )
-
-        # # Define the Hebbian parameters corresponding to each layer
-        # self.hebb_params = nn.ModuleList(
-        #     [
-        #         nn.Linear(input_size, 256, bias=False),
-        #         nn.Linear(256, 128, bias=False),
-        #         nn.Linear(128, 64, bias=False),
-        #         nn.Linear(64, output_size, bias=False),
-        #     ]
-        # )
-
-        # for i, heb_param in enumerate(self.hebb_params):
-        #     nn.init.kaiming_normal_(heb_param.weight)
-        #     heb_param.weight.requires_grad = False
 
         self.indexes = indexes
-        self.hidden_size_array = [32, 64, 128, 256, 256, 1024, 512, output_size]
-        
-        self.conv_size_array = [32, 64, 128, 256, 256]
-
-        # if indexes != [[], [], []]:
-        #     self._register_gradient_hooks(self.indexes)
 
     def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None, target=None, selection_method="hebbian"):
         """
