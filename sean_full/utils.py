@@ -147,7 +147,7 @@ def forwardprop_and_backprop(
         data = data.view(-1, 3, 32, 32).to(device)
         data, target = data.to(device), target.to(device)
         # scalers = None
-        one_hot_target = torch.zeros(target.size(0), 10).to(device)
+        one_hot_target = torch.zeros(target.size(0), 100).to(device)
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
         if not continual:
             indices_old = [None] * len(list_of_indexes)

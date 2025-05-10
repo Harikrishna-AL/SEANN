@@ -11,7 +11,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from data import get_data_separate, get_domain_inc_data, get_cifar10_data
+from data import (
+    get_data_separate,
+    get_domain_inc_data,
+    get_cifar10_data,
+    get_cifar100_data,
+)
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 
@@ -21,11 +26,14 @@ seeds = [49]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device: ", device)
 
-all_train_loaders, all_test_loaders = get_cifar10_data(
-    batch_size=64, num_tasks=2, max_classes=10
+output_size = 100
+
+all_train_loaders, all_test_loaders = get_cifar100_data(
+    batch_size=64, num_tasks=20, max_classes=output_size
 )
 
 all_accuracies = []
+
 
 for seed in seeds:
     print("Seed: ", seed)
@@ -33,7 +41,7 @@ for seed in seeds:
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    layer_sizes = [32, 64, 128, 256, 256, 1024, 512, 10]
+    layer_sizes = [32, 64, 128, 256, 256, 1024, 512, output_size]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     task_masks = [
@@ -42,8 +50,8 @@ for seed in seeds:
 
     list_of_indexes = [[]] * len(layer_sizes)
 
-    task_model = NN(16384, 10, indexes=list_of_indexes).to(device)
-    rnn_gate = RNNGate(784, 10, 2).to(device)
+    task_model = NN(16384, output_size, indexes=list_of_indexes).to(device)
+    # rnn_gate = RNNGate(784, 100, 2).to(device)
 
     all_model_params = task_model.parameters()
     # all_model_params.extend(rnn_gate.parameters())
@@ -68,7 +76,7 @@ for seed in seeds:
                 optimizer=optimizer if t == 0 else None,
                 scheduler=scheduler,
                 task_id=t + 1,
-                rnn_gate=rnn_gate,
+                # rnn_gate=rnn_gate,
                 continual=False if t == 0 else True,
                 indices_old=None if t == 0 else indices_old,
                 prev_parameters=None if t == 0 else prev_parameters_list,
