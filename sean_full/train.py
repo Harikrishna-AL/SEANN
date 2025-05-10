@@ -81,7 +81,7 @@ for seed in seeds:
                 rnn_gate=rnn_gate,
                 continual=False if t == 0 else True,
                 indices_old=None if t == 0 else indices_old,
-                prev_parameters=None if t == 0 else prev_parameters,
+                prev_parameters=None if t == 0 else prev_parameters_list,
             )
 
         all_task_indices, all_task_masks = merge_indices_and_masks(
@@ -108,8 +108,13 @@ for seed in seeds:
         print("Task ", t + 1, " masks: ", task_masks)
         print("Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks))
         task_masks = masks
-        prev_parameters = task_model.linear
-
+        prev_parameters = task_model.layers
+        prev_parameters_list = {}
+        for i in range(len(prev_parameters)):
+            layer = prev_parameters[i]
+            if (isinstance(layer, nn.Linear) or isinstance(layer, nn.Conv2d)) and i < len(prev_parameters) - 1:
+                prev_parameters_list[i] = layer.weight.data.clone()
+        
     accuracies = []
     task_model.eval()
 
