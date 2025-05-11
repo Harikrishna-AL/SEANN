@@ -133,12 +133,20 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
 
             print("Task ", t + 1, " indices: ", task_indices)
             print("Task ", t + 1, " masks: ", task_masks)
+            frozen_neurons = calc_percentage_of_zero_grad(all_task_masks)
             print(
-                "Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks)
+                "Percentage of frozen neurons", frozen_neurons
             )
             task_masks = masks
             prev_parameters = task_model.layers
             prev_parameters_list = {}
+            
+            if frozen_neurons > 85.0:
+                layer_sizes = task_model.grow_layers()
+                task_model.to(device)
+                
+                #udpate the masks size
+                
             for i in range(len(prev_parameters)):
                 layer = prev_parameters[i]
                 if (

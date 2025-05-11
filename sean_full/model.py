@@ -57,7 +57,8 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 1 / num_tasks
+        self.percent_winner = 0.5
+        self.percent_winner_last_layer = 1 / num_tasks
         
         # self.layers = nn.ModuleList(
         #     [
@@ -429,7 +430,7 @@ class NN(nn.Module):
             hebbian_scores = torch.norm(scale_output, p=2, dim=1) # Shape: (output_size)
             if indices_old is not None:
                 hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
-            _, topk_indices_hebbian = torch.topk(hebbian_scores, int(self.percent_winner * x_size)) # Shape: (1)
+            _, topk_indices_hebbian = torch.topk(hebbian_scores, int(self.percent_winner_last_layer * x_size)) # Shape: (1)
             hebbian_mask = torch.zeros(1, x_size, device=y.device)
             hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0)
             indices_non_winners = torch.arange(x_size, device=y.device)[hebbian_mask.squeeze(0) == 0] # Select indices where mask is 0
@@ -523,7 +524,7 @@ class NN(nn.Module):
             hebbian_scores = torch.norm(scale, p=2, dim=1) # Shape: (output_size)
             if indices_old is not None:
                 hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
-            _, topk_indices_hebbian = torch.topk(hebbian_scores, int(self.percent_winner * x_size)) # Shape: (1)
+            _, topk_indices_hebbian = torch.topk(hebbian_scores, int(self.percent_winner_last_layer * x_size)) # Shape: (1)
             hebbian_mask = torch.zeros(1, x_size, device=y.device)
             hebbian_mask.scatter_(1, topk_indices_hebbian.unsqueeze(0), 1.0)
             random_mask = hebbian_mask
@@ -748,3 +749,78 @@ class NN(nn.Module):
                 nn.init.constant_(param, 0)
             elif init_type == "normal":
                 nn.init.kaiming_normal_(param)
+                
+    def grow_layers(self, growth_percent=0.5):
+        """
+        Grow each hidden layer by replicating its top-scoring neurons,
+        then rebuild the final layer so its input_dim matches the new size
+        (but its output_dim stays unchanged).
+        """
+
+        new_linear      = nn.ModuleList()
+        new_hebb        = nn.ModuleList()
+        new_hidden_sizes = []
+
+        # start with the original input size to layer0
+        prev_size = self.layers[0].in_features  # e.g. 784
+
+        L = len(self.layers)
+        for i, layer in enumerate(self.layers):
+            
+
+            # hidden layers: replicate top neurons
+            if i < L - 1:
+                if isinstance(layer, nn.Linear):
+                    out_size  = layer.out_features
+                    orig_in   = layer.in_features
+                    
+                    num_top = max(int(growth_percent * out_size), 1)
+                    scores = torch.norm(layer.weight.data, p=2, dim=1)
+                    topk = torch.topk(scores, num_top).indices
+
+
+                    new_out = out_size + num_top
+
+                    # rebuild feed-forward layer
+                    new_l = nn.Linear(prev_size, new_out)
+                    new_l.weight.data.zero_()
+                    new_l.bias.data.zero_()
+
+                    # copy old weights/bias into [:out_size, :orig_in]
+                    new_l.weight.data[:out_size, :orig_in] = layer.weight.data
+                    new_l.bias.data[:out_size]             = layer.bias.data
+
+                    # replicate the top-k neurons
+                    new_l.weight.data[out_size:, :orig_in] = layer.weight.data[topk]
+                    new_l.bias.data[out_size:]             = layer.bias.data[topk]
+
+                    prev_size = new_out  # next layer’s input size
+                    new_hidden_sizes.append(new_out)
+                else:
+                    new_l = layer
+
+            # final layer: keep out_size the same, but update its input_dim to prev_size
+            else:
+                out_size  = layer.out_features
+                orig_in   = layer.in_features
+                
+                new_out = out_size
+
+                new_l = nn.Linear(prev_size, new_out)
+                new_l.weight.data.zero_()
+                new_l.bias.data.zero_()
+                # copy ALL your old final weights into the left block
+                new_l.weight.data[:, :orig_in] = layer.weight.data
+                new_l.bias.data[:]             = layer.bias.data
+                
+                new_hidden_sizes.append(new_out)
+
+            new_linear.append(new_l)
+            # new_hebb.append(new_h)
+
+        # overwrite with the grown architecture
+        self.layers  = new_linear
+
+        print(f"Network grown to layer sizes: {new_hidden_sizes}")
+        
+        return new_hidden_sizes
