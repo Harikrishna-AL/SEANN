@@ -115,6 +115,9 @@ def forwardprop_and_backprop(
     task_id=None,
     prev_parameters=None,
     rnn_gate=None,
+    output_size=None,
+    epoch=None,
+    data_type=None,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -144,10 +147,13 @@ def forwardprop_and_backprop(
     
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        data = data.view(-1, 3, 32, 32).to(device)
+        if data_type == "mnist":
+            data = data.view(-1, 28 * 28).to(device)
+        elif data_type == "cifar10":
+            data = data.view(-1, 3, 32, 32).to(device)
         data, target = data.to(device), target.to(device)
         # scalers = None
-        one_hot_target = torch.zeros(target.size(0), 100).to(device)
+        one_hot_target = torch.zeros(target.size(0), output_size).to(device)
         one_hot_target.scatter_(1, target.view(-1, 1), 1)
         if not continual:
             indices_old = [None] * len(list_of_indexes)
@@ -196,6 +202,7 @@ def forwardprop_and_backprop(
 
     scheduler.step()
 
-    print("Avg loss: ", loss_total / len(data_loader))
+    # print("Avg loss: ", loss_total / len(data_loader))
+    print(f"Epoch {epoch}: avg_loss -> {loss_total / len(data_loader)}")
     return list_of_indexes, masks, model, optimizer
 

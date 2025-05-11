@@ -19,222 +19,291 @@ from data import (
 )
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
+import argparse
 
 
-seed = 10  # verified
-seeds = [49]
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using device: ", device)
+# seed = 10  # verified
 
-output_size = 100
-
-all_train_loaders, all_test_loaders = get_cifar100_data(
-    batch_size=64, num_tasks=20, max_classes=output_size
-)
-
-all_accuracies = []
-
-
-for seed in seeds:
-    print("Seed: ", seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-    layer_sizes = [32, 64, 128, 256, 256, 1024, 512, output_size]
+def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, lr=0.1, epochs=10):
+    seeds = [seed]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    task_masks = [
-        torch.ones(i).to(device) for i in layer_sizes
-    ]  # create a mask for each layer
-
-    list_of_indexes = [[]] * len(layer_sizes)
-
-    task_model = NN(16384, output_size, indexes=list_of_indexes).to(device)
-    # rnn_gate = RNNGate(784, 100, 2).to(device)
-
-    all_model_params = task_model.parameters()
-    # all_model_params.extend(rnn_gate.parameters())
-    optimizer = optim.SGD(all_model_params, lr=0.1, momentum=0.9)
-    scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
-
-    all_task_indices = list_of_indexes
-    all_task_masks = []
-
-    all_masks = []
-
-    for t in range(len(all_train_loaders)):
-
-        print("### Task ", t + 1, " ###")
-        for i in range(10):
-            task_indices, task_masks, task_model, optimizer = forwardprop_and_backprop(
-                task_model,
-                0.1,
-                all_train_loaders[t],
-                list_of_indexes=list_of_indexes,
-                masks=task_masks,
-                optimizer=optimizer if t == 0 else None,
-                scheduler=scheduler,
-                task_id=t + 1,
-                # rnn_gate=rnn_gate,
-                continual=False if t == 0 else True,
-                indices_old=None if t == 0 else indices_old,
-                prev_parameters=None if t == 0 else prev_parameters_list,
-            )
-
-        all_task_indices, all_task_masks = merge_indices_and_masks(
-            all_task_indices,
-            task_indices,
-            all_task_masks,
-            task_masks,
-            layer_sizes=layer_sizes,
-        )  # merge the indices of the current task with the previous tasks
-
-        indices_old = []
-        masks = []
-
-        for i in range(len(layer_sizes)):
-            indices_old.append(
-                torch.tensor(
-                    [j for j in range(layer_sizes[i]) if j not in all_task_indices[i]]
-                ).to(device)
-            )
-            mask = torch.tensor(
-                [1 if k in all_task_indices[i] else 0 for k in range(layer_sizes[i])]
-            ).to(device)
-            masks.append(mask)
-
-        all_masks.append(task_masks)
-
-        print("Task ", t + 1, " indices: ", task_indices)
-        print("Task ", t + 1, " masks: ", task_masks)
-        print(
-            "Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks)
+    print("Using device: ", device)
+    
+    
+    if data_type == "mnist":
+        all_train_loaders, all_test_loaders = get_data_separate(
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
         )
-        task_masks = masks
-        prev_parameters = task_model.layers
-        prev_parameters_list = {}
-        for i in range(len(prev_parameters)):
-            layer = prev_parameters[i]
-            if (
-                isinstance(layer, nn.Linear) or isinstance(layer, nn.Conv2d)
-            ) and i < len(prev_parameters) - 1:
-                prev_parameters_list[i] = layer.weight.data.clone()
+    elif data_type == "cifar10":
+        all_train_loaders, all_test_loaders = get_cifar10_data(
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
+        )
 
-    accuracies = []
-    task_model.eval()
+    elif data_type == "cifar100":
+        all_train_loaders, all_test_loaders = get_cifar100_data(
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
+        )
+    else:
+        raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10', or 'cifar100'.")
+    
+    all_accuracies = []
 
-    ones_mask = [
-        torch.ones(32).to(device),
-        torch.ones(64).to(device),
-        torch.ones(128).to(device),
-        torch.ones(256).to(device),
-        torch.ones(256).to(device),
-        torch.ones(128).to(device),
-        torch.ones(64).to(device),
-        torch.ones(10).to(device),
-    ]
 
-    def find_task_id(generated_mask, learned_masks):
-        # check similarity between the two masks
-        scores = []
-        for i in range(len(learned_masks)):
-            score = 0
-            for j in range(len(generated_mask[0])):
-                score += torch.max(
-                    torch.sum(
-                        torch.logical_and(generated_mask[0][j], learned_masks[i][j])
-                    )
-                    / torch.sum(generated_mask[0][j]),
-                    torch.sum(
-                        torch.logical_and(generated_mask[1][j], learned_masks[i][j])
-                    )
-                    / torch.sum(generated_mask[1][j]),
+    for seed in seeds:
+        print("Seed: ", seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+        # layer_sizes = [32, 64, 128, 256, 256, 1024, 512, output_size]
+        if data_type == "mnist":
+            layer_sizes = [256, 128, 64, output_size]
+        elif data_type == "cifar10":
+            layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
+            
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        task_masks = [
+            torch.ones(i).to(device) for i in layer_sizes
+        ]  # create a mask for each layer
+
+        list_of_indexes = [[]] * len(layer_sizes)
+        
+        input_size = 512 if data_type == "cifar10" else 28 * 28
+
+        task_model = NN(input_size, output_size, indexes=list_of_indexes, data=data_type, num_tasks = num_tasks).to(device)
+        # rnn_gate = RNNGate(784, 100, 2).to(device)
+
+        all_model_params = task_model.parameters()
+        # all_model_params.extend(rnn_gate.parameters())
+        optimizer = optim.SGD(all_model_params, lr=lr, momentum=0.9)
+        scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
+
+        all_task_indices = list_of_indexes
+        all_task_masks = []
+
+        all_masks = []
+
+        for t in range(len(all_train_loaders)):
+
+            print("### Task ", t + 1, " ###")
+            for i in range(epochs):
+                task_indices, task_masks, task_model, optimizer = forwardprop_and_backprop(
+                    task_model,
+                    0.1,
+                    all_train_loaders[t],
+                    list_of_indexes=list_of_indexes,
+                    masks=task_masks,
+                    optimizer=optimizer if t == 0 else None,
+                    scheduler=scheduler,
+                    task_id=t + 1,
+                    # rnn_gate=rnn_gate,
+                    continual=False if t == 0 else True,
+                    indices_old=None if t == 0 else indices_old,
+                    prev_parameters=None if t == 0 else prev_parameters_list,
+                    output_size=output_size,
+                    epoch = i,
+                    data_type=data_type,
                 )
-            scores.append(score.item())
-        # print("scores: ", scores)
-        # return the index of the mask with the highest similarity
-        return scores.index(max(scores))
 
-    def get_task_id_from_weights(weights, masks, data):
-        scores = []
-        data_mean = torch.mean(data, dim=0)
-        for i in range(len(masks)):
-            weight = F.normalize(weights[0].weight, p=2, dim=1)
-            weight_mean = torch.mean(weight * masks[i][0].T, dim=0)
+            all_task_indices, all_task_masks = merge_indices_and_masks(
+                all_task_indices,
+                task_indices,
+                all_task_masks,
+                task_masks,
+                layer_sizes=layer_sizes,
+            )  # merge the indices of the current task with the previous tasks
 
-            score = torch.sum(torch.abs(data_mean - weight_mean))
-            scores.append(score.item())
+            indices_old = []
+            masks = []
 
-        return scores.index(min(scores))
+            for i in range(len(layer_sizes)):
+                indices_old.append(
+                    torch.tensor(
+                        [j for j in range(layer_sizes[i]) if j not in all_task_indices[i]]
+                    ).to(device)
+                )
+                mask = torch.tensor(
+                    [1 if k in all_task_indices[i] else 0 for k in range(layer_sizes[i])]
+                ).to(device)
+                masks.append(mask)
 
-    for t in range(len(all_test_loaders)):
-        correct = 0
-        test_loader = all_test_loaders[t]
-        print("### Testing Task ", t + 1, " ###")
-        for i, (data, target) in enumerate(test_loader):
-            data = data.view(-1, 3, 32, 32).to(device)
-            target = target.to(device)
-            # inference_masks = []
-            # for m in range(len(all_masks)):
-            #     output, scalers, indices, masks, _ = task_model(
-            #         data, masks=all_masks[m], indices_old=[None] * len(masks)
-            #     )
-            #     inference_masks.append(masks)
+            all_masks.append(task_masks)
 
-            # print("masks: ", masks)
-            # mask_id = find_task_id(inference_masks, all_masks)
-
-            # if i == 0:
-            #     activations = []
-            #     layer1 = task_model.linear[0].weight
-            #     # normalize the weights
-            #     layer1 = F.normalize(layer1, p=2, dim=1)
-            #     print("layer1: ", layer1.shape)
-            #     print("data: ", data.shape)
-            #     activation1 = data @ layer1.T
-            #     for j in range(len(all_masks)):
-            #         activation1 = F.relu(activation1 * all_masks[j][0])
-            #         activations.append(
-            #             torch.sum(activation1, dim=1) / torch.sum(all_masks[j][0])
-            #         )
-            #     # print("activations: ", activations)
-            #     activations = torch.stack(activations, dim=0)  # (2, batch_size)
-            #     mask_id = torch.argmax(activations, dim=0)  # shape: (batch_size,)
-            #     print("mask_id: ", mask_id)
-            # mask_id = get_task_id_from_weights(task_model.linear, all_masks, data)
-            output, scalers, indices, masks, _ = task_model(
-                data, masks=all_masks[t], indices_old=[None] * len(masks)
+            print("Task ", t + 1, " indices: ", task_indices)
+            print("Task ", t + 1, " masks: ", task_masks)
+            print(
+                "Percentage of frozen neurons", calc_percentage_of_zero_grad(all_task_masks)
             )
+            task_masks = masks
+            prev_parameters = task_model.layers
+            prev_parameters_list = {}
+            for i in range(len(prev_parameters)):
+                layer = prev_parameters[i]
+                if (
+                    isinstance(layer, (nn.Linear, nn.Conv2d))
+                ) and i < len(prev_parameters) - 1:
+                    prev_parameters_list[i] = layer.weight.data.clone()
 
-            # check the accuracy
-            predicted = output.argmax(dim=1, keepdim=True)
-            correct += predicted.eq(target.view_as(predicted)).sum().item()
-        print(
-            f"Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%"
-        )
-        accuracies.append(100 * correct / len(test_loader.dataset))
+        accuracies = []
+        task_model.eval()
 
-    all_accuracies.append(torch.tensor(accuracies).to(device))
+        ones_mask = [
+            torch.ones(32).to(device),
+            torch.ones(64).to(device),
+            torch.ones(128).to(device),
+            torch.ones(256).to(device),
+            torch.ones(256).to(device),
+            torch.ones(128).to(device),
+            torch.ones(64).to(device),
+            torch.ones(10).to(device),
+        ]
 
-all_accuracies = torch.stack(all_accuracies, dim=0)
-accuracies = torch.mean(all_accuracies, dim=0)
+        def find_task_id(generated_mask, learned_masks):
+            # check similarity between the two masks
+            scores = []
+            for i in range(len(learned_masks)):
+                score = 0
+                for j in range(len(generated_mask[0])):
+                    score += torch.max(
+                        torch.sum(
+                            torch.logical_and(generated_mask[0][j], learned_masks[i][j])
+                        )
+                        / torch.sum(generated_mask[0][j]),
+                        torch.sum(
+                            torch.logical_and(generated_mask[1][j], learned_masks[i][j])
+                        )
+                        / torch.sum(generated_mask[1][j]),
+                    )
+                scores.append(score.item())
+            # print("scores: ", scores)
+            # return the index of the mask with the highest similarity
+            return scores.index(max(scores))
 
-import numpy as np
-import matplotlib.pyplot as plt
+        def get_task_id_from_weights(weights, masks, data):
+            scores = []
+            data_mean = torch.mean(data, dim=0)
+            for i in range(len(masks)):
+                weight = F.normalize(weights[0].weight, p=2, dim=1)
+                weight_mean = torch.mean(weight * masks[i][0].T, dim=0)
 
-# Plot the accuracies
-plt.figure(figsize=(10, 5))
-# bar plot
-plt.bar(np.arange(len(accuracies)), accuracies.cpu().numpy(), color="blue", alpha=0.7)
-plt.xticks(np.arange(len(accuracies)), [f"Task {i+1}" for i in range(len(accuracies))])
-plt.xlabel("Tasks")
-plt.ylabel("Accuracy")
-plt.title("Task-wise Accuracy")
-plt.ylim(0, 100)
-plt.grid(axis="y")
-plt.show()
+                score = torch.sum(torch.abs(data_mean - weight_mean))
+                scores.append(score.item())
 
+            return scores.index(min(scores))
+
+        for t in range(len(all_test_loaders)):
+            correct = 0
+            test_loader = all_test_loaders[t]
+            print("### Testing Task ", t + 1, " ###")
+            for i, (data, target) in enumerate(test_loader):
+                if data_type == "mnist":
+                    data = data.view(-1, 28 * 28).to(device)
+                elif data_type == "cifar10":
+                    data = data.view(-1, 3, 32, 32).to(device)
+
+                else:
+                    raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10'")
+                target = target.to(device)
+                # inference_masks = []
+                # for m in range(len(all_masks)):
+                #     output, scalers, indices, masks, _ = task_model(
+                #         data, masks=all_masks[m], indices_old=[None] * len(masks)
+                #     )
+                #     inference_masks.append(masks)
+
+                # print("masks: ", masks)
+                # mask_id = find_task_id(inference_masks, all_masks)
+
+                # if i == 0:
+                #     activations = []
+                #     layer1 = task_model.linear[0].weight
+                #     # normalize the weights
+                #     layer1 = F.normalize(layer1, p=2, dim=1)
+                #     print("layer1: ", layer1.shape)
+                #     print("data: ", data.shape)
+                #     activation1 = data @ layer1.T
+                #     for j in range(len(all_masks)):
+                #         activation1 = F.relu(activation1 * all_masks[j][0])
+                #         activations.append(
+                #             torch.sum(activation1, dim=1) / torch.sum(all_masks[j][0])
+                #         )
+                #     # print("activations: ", activations)
+                #     activations = torch.stack(activations, dim=0)  # (2, batch_size)
+                #     mask_id = torch.argmax(activations, dim=0)  # shape: (batch_size,)
+                #     print("mask_id: ", mask_id)
+                # mask_id = get_task_id_from_weights(task_model.linear, all_masks, data)
+                output, scalers, indices, masks, _ = task_model(
+                    data, masks=all_masks[t], indices_old=[None] * len(masks)
+                )
+
+                # check the accuracy
+                predicted = output.argmax(dim=1, keepdim=True)
+                correct += predicted.eq(target.view_as(predicted)).sum().item()
+            print(
+                f"Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%"
+            )
+            accuracies.append(100 * correct / len(test_loader.dataset))
+
+        all_accuracies.append(torch.tensor(accuracies).to(device))
+
+    all_accuracies = torch.stack(all_accuracies, dim=0)
+    accuracies = torch.mean(all_accuracies, dim=0)
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # Plot the accuracies
+    plt.figure(figsize=(10, 5))
+    # bar plot
+    plt.bar(np.arange(len(accuracies)), accuracies.cpu().numpy(), color="blue", alpha=0.7)
+    plt.xticks(np.arange(len(accuracies)), [f"Task {i+1}" for i in range(len(accuracies))])
+    plt.xlabel("Tasks")
+    plt.ylabel("Accuracy")
+    plt.title("Task-wise Accuracy")
+    plt.ylim(0, 100)
+    plt.grid(axis="y")
+    plt.show()
+    
+
+def main():
+    parser = argparse.ArgumentParser(description="Train a model")
+    parser.add_argument(
+        "--seed", type=int, default=10, help="Random seed for reproducibility"
+    )
+    
+    parser.add_argument(
+        "--num_tasks", type=int, default=2, help="Number of tasks"
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=128, help="Batch size for training"
+    )
+    parser.add_argument(
+        "--data_type", type=str, default="mnist", help="Type of data to use"   
+    )
+    parser.add_argument(
+        "--output_size", type=int, default=10, help="Output size of the model"
+    )
+    parser.add_argument(
+        "--lr", type=float, default=0.1, help="Learning rate for the optimizer"
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of epochs for training"
+    )
+    
+    args = parser.parse_args()
+    train(
+        seed=args.seed,
+        num_tasks=args.num_tasks,
+        batch_size=args.batch_size,
+        data_type=args.data_type,
+        output_size=args.output_size,
+        lr=args.lr,
+        epochs=args.epochs,
+    )
+
+if __name__ == "__main__":
+    main()
 
 # print("### Testing both Tasks using entropy as gating mechanism ###")
 # for data, target in test_loader:

@@ -43,7 +43,7 @@ class NN(nn.Module):
     Neural network class with Hebbian learning mechanisms.
     """
 
-    def __init__(self, input_size, output_size, indexes, inhibition_strength=0.01):
+    def __init__(self, input_size, output_size, indexes, inhibition_strength=0.01, data="mnist", num_tasks=2):
         """
         Initializes the network layers, Hebbian parameters, and hooks for gradient freezing.
 
@@ -57,32 +57,137 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.05
+        self.percent_winner = 1 / num_tasks
         
-        self.layers = nn.ModuleList(
+        # self.layers = nn.ModuleList(
+        #     [
+        #         nn.Conv2d(3, 32, kernel_size=3, padding=1),
+        #         nn.ReLU(inplace=True),
+        #         nn.MaxPool2d(kernel_size=2, stride=2),
+        #         nn.Conv2d(32, 64, kernel_size=3, padding=1),
+        #         nn.BatchNorm2d(64),
+        #         nn.ReLU(inplace=True),
+        #         nn.Conv2d(64, 128, kernel_size=3, padding=1),
+        #         nn.ReLU(inplace=True),
+        #         nn.MaxPool2d(kernel_size=2, stride=2),
+        #         nn.Conv2d(128, 256, kernel_size=3, padding=1),
+        #         nn.BatchNorm2d(256),
+        #         nn.ReLU(inplace=True),
+        #         nn.Conv2d(256, 256, kernel_size=3, padding=1),
+        #         nn.Flatten(),
+        #         nn.Linear(input_size, 1024),
+        #         nn.ReLU(inplace=True),
+        #         nn.Linear(1024, 512),
+        #         nn.ReLU(inplace=True),
+        #         nn.Linear(512, output_size),
+        #     ]
+        # )
+        if data == "mnist":
+            self.layers = nn.ModuleList(
             [
-                nn.Conv2d(3, 32, kernel_size=3, padding=1),
+                nn.Linear(input_size, 256),
                 nn.ReLU(inplace=True),
-                nn.MaxPool2d(kernel_size=2, stride=2),
-                nn.Conv2d(32, 64, kernel_size=3, padding=1),
-                nn.BatchNorm2d(64),
+                nn.Linear(256, 128),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(64, 128, kernel_size=3, padding=1),
+                nn.Linear(128, 64),
                 nn.ReLU(inplace=True),
-                nn.MaxPool2d(kernel_size=2, stride=2),
-                nn.Conv2d(128, 256, kernel_size=3, padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(256, 256, kernel_size=3, padding=1),
-                nn.Flatten(),
-                nn.Linear(input_size, 1024),
-                nn.ReLU(inplace=True),
-                nn.Linear(1024, 512),
-                nn.ReLU(inplace=True),
-                nn.Linear(512, output_size),
+                nn.Linear(64, output_size),
             ]
         )
-
+        
+        elif data == "cifar10":
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(3, 64, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(inplace=True),
+                    
+                    nn.MaxPool2d(kernel_size=2, stride=2),
+                    
+                    nn.Conv2d(64, 128, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(128),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(128, 128, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(128),
+                    nn.ReLU(inplace=True),
+                    
+                    nn.MaxPool2d(kernel_size=2, stride=2),
+                    
+                    nn.Conv2d(128, 256, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(256),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(256, 256, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(256),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(256, 256, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(256),
+                    nn.ReLU(inplace=True),
+                    
+                    nn.MaxPool2d(kernel_size=2, stride=2),
+                    
+                    nn.Conv2d(256, 512, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    
+                    nn.MaxPool2d(kernel_size=2, stride=2),
+                    
+                    nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                    nn.BatchNorm2d(512),
+                    nn.ReLU(inplace=True),
+                    
+                    nn.MaxPool2d(kernel_size=2, stride=2),
+                    nn.MaxPool2d(kernel_size=1, stride=1),
+                    
+                    nn.Flatten(),
+                    nn.Linear(input_size, output_size),
+                    
+                    
+                    
+                    # nn.Conv2d(128, 256, kernel_size=3, padding=1),
+                    # nn.ReLU(inplace=True),
+                    # nn.MaxPool2d(kernel_size=2, stride=2),
+                    # nn.Dropout(p=0.3),
+                    
+                    # nn.Conv2d(256, 512, kernel_size=3, padding=1),
+                    # nn.ReLU(inplace=True),
+                    # nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                    # nn.ReLU(inplace=True),
+                    # nn.Conv2d(512, 256, kernel_size=3, padding=1),
+                    # nn.ReLU(inplace=True),
+                    # nn.MaxPool2d(kernel_size=2, stride=2),
+                    # nn.Dropout(p=0.3),
+                    
+                    # nn.Flatten(),
+                    # nn.Linear(input_size, 512),
+                    # nn.ReLU(inplace=True),
+                    # nn.Dropout(p=0.5),
+                    # nn.Linear(512, 256),
+                    # nn.ReLU(inplace=True),
+                    # nn.Dropout(p=0.5),
+                    # nn.Linear(256, 128),
+                    # nn.ReLU(inplace=True),
+                    # nn.Dropout(p=0.5),
+                    # nn.Linear(128, output_size),
+                    # nn.ReLU(inplace=True),
+                    # nn.Dropout(p=0.5),
+                ]
+            )
+            
         self.indexes = indexes
 
     def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None, target=None, selection_method="hebbian"):
