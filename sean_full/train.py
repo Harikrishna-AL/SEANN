@@ -59,7 +59,8 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         if data_type == "mnist":
             layer_sizes = [256, 128, 64, output_size]
         elif data_type == "cifar10":
-            layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
+            # layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
+            layer_sizes = [32, 64, 128,128, 256, 256, 1024, 512, output_size]
             
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -69,7 +70,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
 
         list_of_indexes = [[]] * len(layer_sizes)
         
-        input_size = 512 if data_type == "cifar10" else 28 * 28
+        input_size = 256*4*4 if data_type == "cifar10" else 28 * 28
 
         task_model = NN(input_size, output_size, indexes=list_of_indexes, data=data_type, num_tasks = num_tasks).to(device)
         # rnn_gate = RNNGate(784, 100, 2).to(device)
