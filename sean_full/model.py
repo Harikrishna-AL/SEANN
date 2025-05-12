@@ -758,7 +758,6 @@ class NN(nn.Module):
         """
 
         new_linear      = nn.ModuleList()
-        new_hebb        = nn.ModuleList()
         new_hidden_sizes = []
 
         # start with the original input size to layer0

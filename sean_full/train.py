@@ -142,9 +142,29 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             prev_parameters_list = {}
             
             if frozen_neurons > 85.0:
-                layer_sizes = task_model.grow_layers()
+                layer_sizes_new = task_model.grow_layers()
                 task_model.to(device)
+                task_masks = [
+                    torch.ones(layer_sizes_new[i]).to(device)
+                    for i, mask in enumerate(task_masks)
+                ]
                 
+                layer_sizes_diff = [layer_sizes_new[i] - layer_sizes[i] for i in range(len(layer_sizes))]
+                print(all_task_masks[0].shape)
+                all_task_masks = [
+                    torch.cat((all_task_masks[i], torch.zeros(layer_sizes_diff[i]).unsqueeze(0).to(device)), dim=1) for i in range(len(all_task_masks))
+                ]
+                # update all task mask size
+                
+                layer_sizes = layer_sizes_new
+                
+                all_masks = [
+                    [
+                        torch.cat((all_masks[i][j], torch.zeros(layer_sizes_diff[j]).unsqueeze(0).to(device)), dim=1)
+                        for j in range(len(all_masks[i]))
+                    ] for i in range(len(all_masks))
+                ]
+
                 #udpate the masks size
                 
             for i in range(len(prev_parameters)):
