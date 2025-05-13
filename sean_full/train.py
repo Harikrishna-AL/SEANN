@@ -4,6 +4,7 @@ from utils import (
     calc_percentage_of_zero_grad,
     forwardprop_and_backprop,
     merge_indices_and_masks,
+    plot_activation_masks
 )
 from model import NN, RNNGate
 
@@ -138,10 +139,9 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 "Percentage of frozen neurons", frozen_neurons
             )
             task_masks = masks
-            prev_parameters = task_model.layers
-            prev_parameters_list = {}
             
-            if frozen_neurons > 85.0:
+            
+            if frozen_neurons > 80.0:
                 layer_sizes_new = task_model.grow_layers()
                 task_model.to(device)
                 task_masks = [
@@ -150,11 +150,9 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 ]
                 
                 layer_sizes_diff = [layer_sizes_new[i] - layer_sizes[i] for i in range(len(layer_sizes))]
-                print(all_task_masks[0].shape)
                 all_task_masks = [
                     torch.cat((all_task_masks[i], torch.zeros(layer_sizes_diff[i]).unsqueeze(0).to(device)), dim=1) for i in range(len(all_task_masks))
                 ]
-                # update all task mask size
                 
                 layer_sizes = layer_sizes_new
                 
@@ -166,6 +164,9 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 ]
 
                 #udpate the masks size
+                
+            prev_parameters = task_model.layers
+            prev_parameters_list = {}
                 
             for i in range(len(prev_parameters)):
                 layer = prev_parameters[i]
@@ -293,6 +294,9 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
     plt.ylim(0, 100)
     plt.grid(axis="y")
     plt.show()
+    
+    # plot_activation_masks(all_masks, 0)
+    
     
 
 def main():

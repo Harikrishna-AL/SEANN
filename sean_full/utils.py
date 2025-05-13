@@ -1,8 +1,32 @@
 import torch
 from tqdm import tqdm
 from torch import nn, optim
+import matplotlib.pyplot as plt
+#import tsne
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+import numpy as np
 
 
+def plot_activation_masks(masks, layer_idx):
+    # fig, axes = plt.subplots(1, len(masks), figsize=(15, 5))
+    mat = []
+    for i, mask in enumerate(masks):
+        mat.append(mask[layer_idx].squeeze(0).cpu())
+    mat = torch.stack(mat)
+    mat = mat.numpy()
+    #plot TSNE
+    print(mat.shape)
+    tsne = TSNE(n_components=3, random_state=0)
+    pca = PCA(n_components=5)
+    # mat = tsne.fit_transform(mat)
+    mat = pca.fit_transform(mat)
+    
+    plt.imshow(mat.transpose(), cmap="hot", interpolation="nearest")
+    plt.title(f"Layer {layer_idx}")
+    plt.colorbar()
+    plt.show()
+    
 def merge_indices_and_masks(
     all_task_indices, task_indices, all_task_masks, task_masks, layer_sizes
 ):
@@ -178,21 +202,20 @@ def forwardprop_and_backprop(
         #     target = target % 5
             
         loss = criterion(output, target) 
-        # if common_indices is not None and prev_parameters is not None:
-        #     #add ewc loss to the main loss
-        #     ewc_loss = 0
+        if common_indices is not None and prev_parameters is not None:
+            #add ewc loss to the main loss
+            ewc_loss = 0
             
-        #     for i, idx in enumerate(prev_parameters):
-        #         # print(i, idx)
-        #         ewc_loss = torch.sum(
-        #             torch.pow(
-        #                 model.layers[idx].weight[common_indices[i]]
-        #                 - prev_parameters[idx][common_indices[i]],
-        #                 2,
-        #             )
-        #         )
-        #         loss += 0.5 * ewc_loss
-        #         idx += 1
+            for i, idx in enumerate(prev_parameters):
+                ewc_loss = torch.sum(
+                    torch.pow(
+                        model.layers[idx].weight[common_indices[i]]
+                        - prev_parameters[idx][common_indices[i]],
+                        2,
+                    )
+                )
+                loss += 0.5 * ewc_loss
+                idx += 1
     
                     
         loss.backward()
