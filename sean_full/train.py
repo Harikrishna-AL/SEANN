@@ -4,6 +4,8 @@ from utils import (
     calc_percentage_of_zero_grad,
     forwardprop_and_backprop,
     merge_indices_and_masks,
+    compute_average_accuracy,
+    compute_forward_transfer,
 )
 from model import NN, RNNGate
 
@@ -84,9 +86,12 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         all_task_masks = []
 
         all_masks = []
+        mat_size = len(all_train_loaders)
+        accuracy_matrix = torch.zeros(mat_size, mat_size).to(device)
+
 
         for t in range(len(all_train_loaders)):
-
+            task_model.train()
             print("### Task ", t + 1, " ###")
             for i in range(epochs):
                 task_indices, task_masks, task_model, optimizer = forwardprop_and_backprop(
@@ -173,125 +178,134 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                     isinstance(layer, (nn.Linear, nn.Conv2d))
                 ) and i < len(prev_parameters) - 1:
                     prev_parameters_list[i] = layer.weight.data.clone()
+            
+            print("Evaluating Task ", t + 1)
+            print("length of all task masks", len(all_task_masks))
+            print("length of all masks", len(all_masks))
+            print("length of all test loaders", len(all_test_loaders))
+            
+            task_model.eval()
 
-        accuracies = []
-        task_model.eval()
-
-        ones_mask = [
-            torch.ones(32).to(device),
-            torch.ones(64).to(device),
-            torch.ones(128).to(device),
-            torch.ones(256).to(device),
-            torch.ones(256).to(device),
-            torch.ones(128).to(device),
-            torch.ones(64).to(device),
-            torch.ones(10).to(device),
-        ]
-
-        def find_task_id(generated_mask, learned_masks):
-            # check similarity between the two masks
-            scores = []
-            for i in range(len(learned_masks)):
-                score = 0
-                for j in range(len(generated_mask[0])):
-                    score += torch.max(
-                        torch.sum(
-                            torch.logical_and(generated_mask[0][j], learned_masks[i][j])
-                        )
-                        / torch.sum(generated_mask[0][j]),
-                        torch.sum(
-                            torch.logical_and(generated_mask[1][j], learned_masks[i][j])
-                        )
-                        / torch.sum(generated_mask[1][j]),
-                    )
-                scores.append(score.item())
-            # print("scores: ", scores)
-            # return the index of the mask with the highest similarity
-            return scores.index(max(scores))
-
-        def get_task_id_from_weights(weights, masks, data):
-            scores = []
-            data_mean = torch.mean(data, dim=0)
-            for i in range(len(masks)):
-                weight = F.normalize(weights[0].weight, p=2, dim=1)
-                weight_mean = torch.mean(weight * masks[i][0].T, dim=0)
-
-                score = torch.sum(torch.abs(data_mean - weight_mean))
-                scores.append(score.item())
-
-            return scores.index(min(scores))
-
-        for t in range(len(all_test_loaders)):
-            correct = 0
-            test_loader = all_test_loaders[t]
-            print("### Testing Task ", t + 1, " ###")
-            for i, (data, target) in enumerate(test_loader):
-                if data_type == "mnist":
-                    data = data.view(-1, 28 * 28).to(device)
-                elif data_type == "cifar10":
-                    data = data.view(-1, 3, 32, 32).to(device)
-
-                else:
-                    raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10'")
-                target = target.to(device)
-                # inference_masks = []
-                # for m in range(len(all_masks)):
-                #     output, scalers, indices, masks, _ = task_model(
-                #         data, masks=all_masks[m], indices_old=[None] * len(masks)
-                #     )
-                #     inference_masks.append(masks)
-
-                # print("masks: ", masks)
-                # mask_id = find_task_id(inference_masks, all_masks)
-
-                # if i == 0:
-                #     activations = []
-                #     layer1 = task_model.linear[0].weight
-                #     # normalize the weights
-                #     layer1 = F.normalize(layer1, p=2, dim=1)
-                #     print("layer1: ", layer1.shape)
-                #     print("data: ", data.shape)
-                #     activation1 = data @ layer1.T
-                #     for j in range(len(all_masks)):
-                #         activation1 = F.relu(activation1 * all_masks[j][0])
-                #         activations.append(
-                #             torch.sum(activation1, dim=1) / torch.sum(all_masks[j][0])
-                #         )
-                #     # print("activations: ", activations)
-                #     activations = torch.stack(activations, dim=0)  # (2, batch_size)
-                #     mask_id = torch.argmax(activations, dim=0)  # shape: (batch_size,)
-                #     print("mask_id: ", mask_id)
-                # mask_id = get_task_id_from_weights(task_model.linear, all_masks, data)
-                output, scalers, indices, masks, _ = task_model(
-                    data, masks=all_masks[t], indices_old=[None] * len(masks)
+            for j in range(t + 1):
+                correct = 0
+                total = 0
+                for data, target in all_test_loaders[j]:
+                    if data_type == "mnist":
+                        data = data.view(-1, 28 * 28).to(device)
+                    elif data_type == "cifar10":
+                        data = data.view(-1, 3, 32, 32).to(device)
+                    target = target.to(device)
+                    output, _, _, masks, _ = task_model(data, masks=all_masks[j], indices_old=[None]*len(masks))
+                    pred = output.argmax(dim=1)
+                    correct += pred.eq(target).sum().item()
+                    total += target.size(0)
+                acc = 100.0 * correct / total
+                accuracy_matrix[t, j] = acc
+                print(f"Accuracy on Task {j+1} after training Task {t+1}: {acc:.2f}%")
+                # print("Accuracy Matrix after task", t + 1)
+                # print(accuracy_matrix[:t + 1, :t + 1].cpu().numpy())
+            
+            if t < num_tasks - 1:
+                print(f"Estimating FWT: Task {t+1} → Task {t+2} (before training Task {t+2})")
+                task_indices_next, task_masks_next, _, _ = forwardprop_and_backprop(
+                    task_model, 
+                    0.1, 
+                    all_train_loaders[t + 1], 
+                    list_of_indexes, 
+                    masks=[torch.ones_like(m) for m in task_masks],
+                    optimizer=None, 
+                    scheduler=None, 
+                    task_id=t + 2, 
+                    # continual=False if t == 0 else True,
+                    indices_old=None, 
+                    prev_parameters=prev_parameters_list,
+                    output_size=output_size, 
+                    epoch=0, 
+                    data_type=data_type,
+                    compute_only_mask=True,
                 )
 
-                # check the accuracy
-                predicted = output.argmax(dim=1, keepdim=True)
-                correct += predicted.eq(target.view_as(predicted)).sum().item()
-            print(
-                f"Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%"
-            )
-            accuracies.append(100 * correct / len(test_loader.dataset))
+                correct = 0
+                total = 0
+                for data, target in all_test_loaders[t + 1]:
+                    data = data.view(data.size(0), -1).to(device) if data_type == "mnist" else data.to(device)
+                    target = target.to(device)
+                    output, _, _, _, _ = task_model(data, masks=task_masks_next, indices_old=[None]*len(task_masks_next))
+                    pred = output.argmax(dim=1)
+                    correct += pred.eq(target).sum().item()
+                    total += target.size(0)
+                acc = 100.0 * correct / total
+                accuracy_matrix[t, t + 1] = acc
+                print(f"FWT A[{t}][{t+1}] = {acc:.2f}%")
 
-        all_accuracies.append(torch.tensor(accuracies).to(device))
+                print("Accuracy Matrix after task", t + 1)
+                print(accuracy_matrix[:t + 1, :t + 1].cpu().numpy())
 
-    all_accuracies = torch.stack(all_accuracies, dim=0)
-    accuracies = torch.mean(all_accuracies, dim=0)
+        # accuracies = []
+        # task_model.eval()
 
-    import numpy as np
+        
+        # accuracy_matrix = torch.zeros(num_tasks, num_tasks).to(device)
+        # print("testing all tasks")
+
+        # for j in range(t + 1):
+        #     correct = 0
+        #     test_loader = all_test_loaders[j]
+        #     print("Testing Task ", j + 1)
+
+        #     for data, target in test_loader:
+        #         if data_type == "mnist":
+        #             data = data.view(-1, 28 * 28).to(device)
+        #         elif data_type == "cifar10":
+        #             data = data.view(-1, 3, 32, 32).to(device)
+        #         target = target.to(device)
+
+        #         output, _, _, masks, _ = task_model(
+        #             data, masks=all_masks[j], indices_old=[None] * len(masks)
+        #         )
+        #         predicted = output.argmax(dim=1, keepdim=True)
+        #         correct += predicted.eq(target.view_as(predicted)).sum().item()
+
+        #     acc = 100.0 * correct / len(test_loader.dataset)
+        #     accuracy_matrix[t, j] = acc
+        #     print(f"Accuracy on Task {j+1} after training Task {t+1}: {acc:.2f}%")
+        #     print("popopopo")
+
+        # all_accuracies.append(torch.tensor(accuracies).to(device))
+
+    # accuracy_matrix[i, j]: accuracy on task j after training task i
+    # accuracy_matrix = torch.zeros((len(all_accuracies[0]), len(all_accuracies[0])))
+
+    # Fill accuracy matrix: after training task i, accuracy on task j
+    # for i in range(len(all_accuracies[0])):
+    #     for j in range(i + 1):
+    #         accuracy_matrix[i, j] = all_accuracies[0][j]
+
+    print("len of all task masks", len(all_task_masks))
+
+    print("Accuracy Matrix after task", t + 1)
+    print(accuracy_matrix[:t + 1, :t + 1].cpu().numpy())    
+
+    avg_acc = compute_average_accuracy(accuracy_matrix.numpy())
+    fwt = compute_forward_transfer(accuracy_matrix.numpy(), random_baseline=10.0)
+
+    print(f"Average Accuracy: {avg_acc:.2f}%")
+    print(f"Forward Transfer (FWT): {fwt:.2f}%")
+
+    # Optional: plot the accuracy matrix heatmap
     import matplotlib.pyplot as plt
+    import seaborn as sns
 
-    # Plot the accuracies
-    plt.figure(figsize=(10, 5))
-    # bar plot
-    plt.bar(np.arange(len(accuracies)), accuracies.cpu().numpy(), color="blue", alpha=0.7)
-    plt.xticks(np.arange(len(accuracies)), [f"Task {i+1}" for i in range(len(accuracies))])
-    plt.xlabel("Tasks")
-    plt.ylabel("Accuracy")
-    plt.title("Task-wise Accuracy")
-    plt.ylim(0, 100)
-    plt.grid(axis="y")
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        accuracy_matrix[:num_tasks, :num_tasks].cpu().numpy(),
+        annot=True, fmt=".2f", cmap="Blues",
+        xticklabels=[f"T{i+1}" for i in range(num_tasks)],
+        yticklabels=[f"T{i+1}" for i in range(num_tasks)]
+    )
+    plt.xlabel("Evaluation Task")
+    plt.ylabel("After Training Task")
+    plt.title("Continual Learning Accuracy Matrix")
     plt.show()
     
 
@@ -333,192 +347,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# print("### Testing both Tasks using entropy as gating mechanism ###")
-# for data, target in test_loader:
-#     data = data.view(-1, 784).to(device)
-#     target = target.to(device)
-
-#     outputs = []
-#     entropies = []
-
-#     for mask in all_masks:
-#         # Forward pass through the subnetwork defined by the mask
-#         output, scalers, indices, masks, _ = original_model(
-#             data, masks=mask, indices_old=[None] * len(mask)
-#         )
-#         outputs.append(output)
-
-#         prob = output
-#         # prob = F.softmax(output, dim=1)
-#         entropy = -torch.sum(
-#             prob * torch.log(prob + 1e-10), dim=1
-#         )  # shape: (batch_size,)
-#         entropies.append(entropy)
-
-#     entropies = torch.stack(entropies, dim=0)  # (2, batch_size)
-#     outputs = torch.stack(outputs, dim=0)  # (2, batch_size, num_classes)
-
-#     # Choose output from network with minimum entropy for each sample
-#     min_entropy_indices = torch.argmin(entropies, dim=0)  # shape: (batch_size,)
-
-#     batch_size = data.size(0)
-#     final_preds = torch.zeros(batch_size, dtype=torch.long, device=device)
-
-#     for i in range(batch_size):
-#         selected_output = outputs[min_entropy_indices[i], i]
-#         final_preds[i] = selected_output.argmax()
-
-#     correct += final_preds.eq(target).sum().item()
-
-# print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%")
-
-
-# print("#### Testing both Tasks using RNN as gating mechanism ####")
-# correct = 0
-# for data, target in test_loader:
-#     data = data.view(-1, 784).to(device)
-#     target = target.to(device)
-
-#     gate_out = rnn_gate(data)
-#     gate_outs = torch.argmax(gate_out, dim=1)  # shape: (batch_size,)
-#     outputs = []
-#     for i in range(len(gate_outs)):
-#         data_in = data[i].unsqueeze(0)
-#         data_in = data_in.view(-1, 784).to(device)
-#         output, scalers, indices, masks, _ = original_model(data_in, masks=all_masks[gate_outs[i]], indices_old=[None]*len(task1_masks))
-#         # output = output.squeeze(1)
-#         predicted = output.argmax(dim=1, keepdim=True)
-#         predicted = predicted.squeeze(1)
-#         predicted = predicted.squeeze(0)
-#         outputs.append(predicted)
-#     outputs = torch.stack(outputs, dim=0)      # (2, batch_size, num_classes)
-#     # final_preds = outputs.argmax(dim=1, keepdim=True)
-#     # print(outputs)
-#     correct += final_preds.eq(target.view_as(outputs)).sum().item()
-# print(f"Accuracy for both Tasks: {100 * correct / len(test_loader.dataset):.2f}%")
-
-# correct = 0
-# for i, (data, target) in enumerate(test_loader):
-#     data = data.view(-1, 784).to(device)
-#     target = target.to(device)
-
-#     activations = []
-
-#     if i == 0:
-#         layer1 = task1_model.linear[0]
-#         activation1 = layer1(data)
-#         for j in range(len(all_masks)):
-#             activation1 = F.relu(activation1 * all_masks[j][0])
-#             activations.append(
-#                 torch.sum(activation1, dim=1) / torch.sum(all_masks[j][0])
-#             )
-#         activations = torch.stack(activations, dim=0)
-#         print("argmax of avg activation: ", torch.argmax(activations, dim=0))
-#         print("activations: ", activations)
-#         print("Target: ", target)
-
-# correct = 0
-# print("### Testing Task 1###")
-# task_id = 1
-# for data, target in test_loader_1:
-#     data = data.view(-1, 784)
-#     data, target = data.to(device), target.to(device)
-#     output, scalers, indices, masks, _ = task1_model(
-#         data, masks=task1_masks, indices_old=[None] * len(indices)
-#     )
-#     # check the accuracy
-#     predicted = output.argmax(dim=1, keepdim=True)
-#     correct += predicted.eq(target.view_as(predicted)).sum().item()
-
-# print(f"Accuracy for Task 1: {100* correct/len(test_loader_1.dataset)}%")
-# accuracies.append(100 * correct / len(test_loader_1.dataset))
-
-# # task2_masks = get_merge_mask(task1_masks, task2_masks)
-
-# correct = 0
-# print("### Testing Task 2###")
-# task_id = 2
-# for data, target in test_loader_2:
-#     data = data.view(-1, 784)
-#     data, target = data.to(device), target.to(device)
-#     output, scalers, indices, masks, _ = task2_model(
-#         data, masks=task2_masks, indices_old=[None] * len(indices)
-#     )
-#     # check the accuracy
-#     predicted = output.argmax(dim=1, keepdim=True)
-#     # target = target % 5
-#     correct += predicted.eq(target.view_as(predicted)).sum().item()
-
-# print(f"Accuracy for Task 2: {100* correct/len(test_loader_2.dataset)}%")
-# accuracies.append(100 * correct / len(test_loader_2.dataset))
-
-# layer1 = task2_model.linear[0]
-# #find out the principal direction of the weights of both the subnetworks
-# # layer1_task1 = torch.where(task1_masks[0] == 1, layer1.weight.T, torch.zeros_like(layer1.weight.T))
-# # layer1_task2 = torch.where(task2_masks[0] == 1, layer1.weight.T, torch.zeros_like(layer1.weight.T))
-# # layer1_task2 = layer1.weight.T * task2_masks[0]
-# layer1_task1 = layer1.weight[task1_masks[0].squeeze(0) == 1]
-# layer1_task2 = layer1.weight[task2_masks[0].squeeze(0) == 1]
-# print(layer1_task1)
-# print(layer1_task2)
-# print(layer1_task1.shape)
-# print(layer1_task2.shape)
-# #plot the principal direction of the weights of both the subnetworks
-# import numpy as np
-# from sklearn.decomposition import PCA
-# pca = PCA(n_components=2)
-# pca.fit(layer1_task1.cpu().detach().numpy())
-# layer1_task1 = pca.transform(layer1_task1.cpu().detach().numpy())
-# pca.fit(layer1_task2.cpu().detach().numpy())
-# layer1_task2 = pca.transform(layer1_task2.cpu().detach().numpy())
-
-# import matplotlib.pyplot as plt
-# plt.scatter(layer1_task1[:, 0], np.arange(len(layer1_task1)),color='red', label='Task 1')
-# plt.scatter(layer1_task2[:, 0], np.arange(len(layer1_task2)),color='blue', label='Task 2')
-# plt.xlabel('Principal Component 1')
-# plt.ylabel('Principal Component 2')
-# plt.title('Principal Component Analysis of Task 1 and Task 2 Weights')
-# plt.legend()
-# plt.show()
-
-# import matplotlib.pyplot as plt
-# import numpy as np
-
-# hebbian_weights = task1_model.hebb_params[0].weight.data.cpu().numpy()
-# model_weights = task2_model.linear[0].weight.data.cpu().numpy()
-# model_weights1 = task2_model.linear[1].weight.data.cpu().numpy()
-
-# model_neurons = np.random.choice(256, 20)
-# model_neurons1 = np.random.choice(128, 20)
-# # select random 20 neurons
-# neurons = np.random.choice(256, 20)
-
-
-# plt.figure(figsize=(20, 10))
-# for i, neuron in enumerate(neurons):
-#     plt.subplot(4, 5, i + 1)
-#     plt.imshow(hebbian_weights[neuron].reshape(28, 28), cmap="gray")
-#     plt.axis("off")
-
-# plt.show()
-
-# plt.figure(figsize=(20, 10))
-# for i, neuron in enumerate(model_neurons):
-#     idx = neuron
-#     # idx = task2_indices[0][neuron]
-#     plt.subplot(4, 5, i + 1)
-#     plt.imshow(model_weights[idx].reshape(28, 28), cmap="gray")
-#     plt.axis("off")
-
-# plt.show()
-
-# plt.figure(figsize=(20, 10))
-# for i, neuron in enumerate(model_neurons1):
-#     idx = neuron
-#     # idx = task2_indices[1][neuron]
-#     plt.subplot(4, 5, i + 1)
-#     plt.imshow(model_weights1[idx].reshape(16, 16), cmap="gray")
-#     plt.axis("off")
-
-# plt.show()

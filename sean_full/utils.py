@@ -1,6 +1,7 @@
 import torch
 from tqdm import tqdm
 from torch import nn, optim
+import numpy as np
 
 
 def merge_indices_and_masks(
@@ -118,6 +119,7 @@ def forwardprop_and_backprop(
     output_size=None,
     epoch=None,
     data_type=None,
+    compute_only_mask=False,
 ):
     """
     Performs forward and backward propagation over a dataset with optional continual learning.
@@ -176,6 +178,9 @@ def forwardprop_and_backprop(
         # if task_id is not None:
         #     output = output[:, 5*(task_id-1):5*task_id]
         #     target = target % 5
+
+        if compute_only_mask:
+            break
             
         loss = criterion(output, target) 
         # if common_indices is not None and prev_parameters is not None:
@@ -199,10 +204,25 @@ def forwardprop_and_backprop(
         optimizer.step()
         loss_total += loss.item()
 
+    if not compute_only_mask and scheduler is not None:
+        scheduler.step()
 
-    scheduler.step()
-
+    if not compute_only_mask:
+        print(f"Epoch {epoch}: avg_loss -> {loss_total / len(data_loader)}")
+    
     # print("Avg loss: ", loss_total / len(data_loader))
-    print(f"Epoch {epoch}: avg_loss -> {loss_total / len(data_loader)}")
+    
     return list_of_indexes, masks, model, optimizer
 
+def compute_average_accuracy(acc_matrix):
+    # T = acc_matrix.shape[1]
+    return np.mean(acc_matrix[-1, :])
+
+def compute_forward_transfer(acc_matrix, random_baseline=10.0):
+    """
+    acc_matrix[i, j] = accuracy on task j after training on task i
+    FWT compares untrained accuracy on task t (after task t-1) to random baseline
+    """
+    T = acc_matrix.shape[1]
+    fwt = [acc_matrix[t-1, t] - random_baseline for t in range(1, T)]
+    return np.mean(fwt)
