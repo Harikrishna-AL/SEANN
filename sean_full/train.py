@@ -37,7 +37,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         )
     elif data_type == "cifar10":
         all_train_loaders, all_test_loaders = get_cifar10_data(
-            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size, imbalance=True
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size, imbalance=False
         )
 
     elif data_type == "cifar100":
@@ -61,7 +61,17 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             layer_sizes = [256, 128, 64, output_size]
         elif data_type == "cifar10":
             # layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
-            layer_sizes = [32, 64, 128,128, 256, 256, 1024, 512, output_size]
+            # layer_sizes = [32, 64, 128,128, 256, 256, 1024, 512, output_size]
+            layer_sizes = [
+                64, # Conv1
+                64, # Conv2
+                128, # Conv3
+                128, # Conv4
+                256, # Conv5
+                256, # Conv6
+                512, # Fully Connected Layer
+                output_size
+                ]
         elif data_type == "cifar100":
             layer_sizes = [
                 64,              # conv1 (input: 3 → 64)
@@ -205,6 +215,29 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                     isinstance(layer, (nn.Linear, nn.Conv2d))
                 ) and i < len(prev_parameters) - 1:
                     prev_parameters_list[i] = layer.weight.data.clone()
+            
+            correct = 0
+            test_loader = all_test_loaders[t]
+            print("### Testing Task ", t + 1, " ###")
+            for i, (data, target) in enumerate(test_loader):
+                if data_type == "mnist":
+                    data = data.view(-1, 28 * 28).to(device)
+                elif data_type == "cifar10" or data_type == "cifar100":
+                    data = data.view(-1, 3, 32, 32).to(device)
+
+                else:
+                    raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10'")
+                target = target.to(device)
+                output, scalers, indices, masks, _ = task_model(
+                    data, masks=all_masks[t], indices_old=[None] * len(masks)
+                )
+
+                # check the accuracy
+                predicted = output.argmax(dim=1, keepdim=True)
+                correct += predicted.eq(target.view_as(predicted)).sum().item()
+            print(
+                f"Training Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%"
+            )
 
         accuracies = []
         task_model.eval()

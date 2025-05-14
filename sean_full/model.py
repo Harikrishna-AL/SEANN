@@ -58,7 +58,7 @@ class NN(nn.Module):
         self.k = 5
         self.inhibition_strength = inhibition_strength
         self.percent_winner = 0.2
-        self.percent_common = 0.1
+        self.percent_common = 0.0
         self.percent_winner_last_layer = 1 / num_tasks
 
         # self.layers = nn.ModuleList(
@@ -98,35 +98,67 @@ class NN(nn.Module):
         )
         
         elif data == "cifar10":
+            # self.layers = nn.ModuleList([
+            # nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            # nn.ReLU(),
+            # nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2, 2), # output: 64 x 16 x 16
+            # nn.BatchNorm2d(64),
+
+            # nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            # nn.ReLU(),
+            # nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2, 2), # output: 128 x 8 x 8
+            # nn.BatchNorm2d(128),
+
+            # nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+            # nn.ReLU(),
+            # nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2, 2), # output: 256 x 4 x 4
+            # nn.BatchNorm2d(256),
+
+            # nn.Flatten(), 
+            # nn.Linear(input_size, 1024),
+            # nn.ReLU(),
+            # nn.Linear(1024, 512),
+            # nn.ReLU(),
+            # nn.Linear(512, 10)
+            # ])
             self.layers = nn.ModuleList([
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2), # output: 64 x 16 x 16
+                
+            nn.Conv2d(3, 64, kernel_size=3, padding=1),  # 32x32x64
             nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1), # 32x32x64
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),                             # 16x16x64
 
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2), # output: 128 x 8 x 8
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),# 16x16x128
             nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),# 16x16x128
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),                             # 8x8x128
 
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2), # output: 256 x 4 x 4
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),# 8x8x256
             nn.BatchNorm2d(256),
-
-            nn.Flatten(), 
-            nn.Linear(input_size, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Linear(512, 10)
-            ])
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),# 8x8x256
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),                             # 4x4x256
+            nn.Flatten(),
+            nn.Dropout(0.5),
+            nn.Linear(256*4*4, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(512, output_size)
+        ])
         
         elif data == "cifar100":
             self.layers = nn.ModuleList()
@@ -159,7 +191,7 @@ class NN(nn.Module):
                                              stride=stride_block, bias=False))  # downsample
                 self.layers.append(nn.BatchNorm2d(out_channels))
                 downsample = True
-                self.in_channels = out_channels
+                # self.in_channels = out_channels
             else:
                 downsample = False
 
@@ -248,18 +280,18 @@ class NN(nn.Module):
                 if common_index is not None:
                     common_indices.append(common_index)
                     
-            elif isinstance(layer, nn.BatchNorm2d) or isinstance(layer, nn.ReLU):
+            if isinstance(layer, (nn.BatchNorm2d, nn.ReLU, nn.MaxPool2d, nn.Dropout, nn.Flatten)):
                 x1 = layer(x)
                 
-            elif isinstance(layer, nn.Identity):
-                skip_connections = x
+            # elif isinstance(layer, nn.Identity):
+            #     skip_connections = x1
                 
-            else:
-                if skip_connections is not None:
-                    x = x + skip_connections
-                    skip_connections = None
+            # else:
+            #     if skip_connections is not None:
+            #         x1 = x1 + skip_connections
+            #         skip_connections = None
                 
-                x1 = layer(x)
+            #     x1 = layer(x)
                     
             x = x1
             
@@ -337,14 +369,19 @@ class NN(nn.Module):
 
             if num_winners > 0:
                 _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
+                
                 if indices_old is not None:
                     common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_indices]
+                    
                     if len(common_indices) > int(self.percent_common * num_winners):
-                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(self.percent_common*num_winners)], float('-inf'))
+                        common_indices = common_indices[:int(self.percent_common * num_winners)]
+                        indices_old = indices_old[~torch.isin(indices_old, common_indices)]
+                        hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                     else:
-                        hebbian_scores = hebbian_scores.scatter(0, common_indices, float('-inf'))
+                        indices_old = indices_old[~torch.isin(indices_old, common_indices)]
+                        hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                         
                          
@@ -583,7 +620,18 @@ class NN(nn.Module):
                     # Optional: Reselect if too much overlap (like original code)
                     max_common = int(self.percent_common * num_winners)
                     if common_indices.numel() > max_common:
-                        eligible_scores.scatter_(0, common_indices[:max_common], float('-inf')) # Penalize only some common ones
+                        common_indices = common_indices[:max_common]
+                        indices_old = indices_old[~torch.isin(indices_old, common_indices)]
+                        eligible_scores = eligible_scores.scatter(0, indices_old.long(), float('-inf')) # Penalize old indices
+                        # eligible_scores.scatter_(0, common_indices[:max_common], float('-inf')) # Penalize only some common ones
+                        actual_k = min(num_winners, (eligible_scores > -math.inf).sum().item())
+                        if actual_k > 0:
+                           _, topk_indices_hebbian = torch.topk(eligible_scores, actual_k, largest=True, sorted=False)
+                        else:
+                           topk_indices_hebbian = torch.tensor([], dtype=torch.long, device=y.device)
+                    else:
+                        indices_old = indices_old[~torch.isin(indices_old, common_indices)]
+                        eligible_scores = eligible_scores.scatter(0, indices_old.long(), float('-inf'))
                         actual_k = min(num_winners, (eligible_scores > -math.inf).sum().item())
                         if actual_k > 0:
                            _, topk_indices_hebbian = torch.topk(eligible_scores, actual_k, largest=True, sorted=False)
@@ -625,7 +673,7 @@ class NN(nn.Module):
         indices_non_winners = all_indices[~winner_mask_1d]
         
         activation_mask = activation_mask.view(out_channels)
-    
+        
         return scale, indices_non_winners, activation_mask, common_indices
         
 

@@ -1,5 +1,6 @@
 import torchvision
 import torch
+from torchvision import transforms
 
 
 # import NMIST data
@@ -28,17 +29,32 @@ def get_data(batch_size=128):
 
 
 def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2, imbalance=False):
+    transform_train = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465),
+                            (0.2023, 0.1994, 0.2010)),
+    ])
+
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465),
+                            (0.2023, 0.1994, 0.2010)),
+    ])
+
     train_data = torchvision.datasets.CIFAR10(
         root="../../data",
         train=True,
         download=True,
-        transform=torchvision.transforms.ToTensor(),
+        transform=transform_train,
     )
+    
     test_data = torchvision.datasets.CIFAR10(
         root="../../data",
         train=False,
         download=True,
-        transform=torchvision.transforms.ToTensor(),
+        transform=transform_test,
     )
 
     all_train_data = []
