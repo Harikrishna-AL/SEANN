@@ -27,7 +27,7 @@ def get_data(batch_size=128):
     return train_loader, test_loader
 
 
-def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
+def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2, imbalance=False):
     train_data = torchvision.datasets.CIFAR10(
         root="../../data",
         train=True,
@@ -43,7 +43,8 @@ def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
 
     all_train_data = []
     all_test_data = []
-
+    imbalance_factor = 1
+    
     per_task = max_classes // num_tasks
     for i in range(per_task, max_classes + 1, per_task):
         task_train_data = []
@@ -51,6 +52,14 @@ def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
         for data, target in train_data:
             if i - per_task <= target < i:
                 task_train_data.append((data, target))
+                
+        if imbalance:
+            # reduce the number of samples by the imbalance factor
+            
+            print(int(len(task_train_data) * imbalance_factor))
+            task_train_data = task_train_data[: int(len(task_train_data) * imbalance_factor)]
+            imbalance_factor -= 0.1
+            print(f"Task {i}: {len(task_train_data)} samples")
 
         for data, target in test_data:
             if i - per_task <= target < i:
@@ -69,7 +78,7 @@ def get_cifar10_data(batch_size=128, max_classes=10, num_tasks=2):
     return all_train_data, all_test_data
 
 
-def get_cifar100_data(batch_size=128, max_classes=100, num_tasks=20):
+def get_cifar100_data(batch_size=128, max_classes=100, num_tasks=20, imbalance=False):
     train_data = torchvision.datasets.CIFAR100(
         root="../../data",
         train=True,
@@ -87,6 +96,7 @@ def get_cifar100_data(batch_size=128, max_classes=100, num_tasks=20):
     all_test_data = []
 
     per_task = max_classes // num_tasks
+    imbalance_factor = 1
     for i in range(per_task, max_classes + 1, per_task):
         task_train_data = []
         task_test_data = []

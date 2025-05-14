@@ -173,7 +173,7 @@ def forwardprop_and_backprop(
         optimizer.zero_grad()
         if data_type == "mnist":
             data = data.view(-1, 28 * 28).to(device)
-        elif data_type == "cifar10":
+        elif data_type == "cifar10" or data_type == "cifar100":
             data = data.view(-1, 3, 32, 32).to(device)
         data, target = data.to(device), target.to(device)
         # scalers = None

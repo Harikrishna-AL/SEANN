@@ -37,7 +37,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         )
     elif data_type == "cifar10":
         all_train_loaders, all_test_loaders = get_cifar10_data(
-            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size, imbalance=True
         )
 
     elif data_type == "cifar100":
@@ -62,6 +62,35 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         elif data_type == "cifar10":
             # layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
             layer_sizes = [32, 64, 128,128, 256, 256, 1024, 512, output_size]
+        elif data_type == "cifar100":
+            layer_sizes = [
+                64,              # conv1 (input: 3 → 64)
+                
+                # Layer 1 (2 BasicBlocks): both blocks keep 64 channels
+                64, 64,          # conv1 and conv2 of 1st block
+                64, 64,          # conv1 and conv2 of 2nd block
+                
+                128,
+
+                # Layer 2 (2 BasicBlocks): 64 → 128
+                128, 128,        # downsample conv + conv2 of 1st block
+                128, 128,        # conv1 and conv2 of 2nd block
+                
+                256,
+
+                # Layer 3 (2 BasicBlocks): 128 → 256
+                256, 256,        # downsample conv + conv2 of 1st block
+                256, 256,        # conv1 and conv2 of 2nd block
+                
+                512,
+
+                # Layer 4 (2 BasicBlocks): 256 → 512
+                512, 512,        # downsample conv + conv2 of 1st block
+                512, 512,        # conv1 and conv2 of 2nd block
+
+                # Classifier
+                output_size      # Final output neurons (e.g., 10 for CIFAR-10)
+            ]
             
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -85,6 +114,8 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         all_task_masks = []
 
         all_masks = []
+        
+        print(task_model)
 
         for t in range(len(all_train_loaders)):
 
@@ -141,7 +172,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             task_masks = masks
             
             
-            if frozen_neurons > 80.0:
+            if frozen_neurons > 80.0 and data_type == "mnist":
                 layer_sizes_new = task_model.grow_layers()
                 task_model.to(device)
                 task_masks = [
@@ -229,7 +260,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             for i, (data, target) in enumerate(test_loader):
                 if data_type == "mnist":
                     data = data.view(-1, 28 * 28).to(device)
-                elif data_type == "cifar10":
+                elif data_type == "cifar10" or data_type == "cifar100":
                     data = data.view(-1, 3, 32, 32).to(device)
 
                 else:
@@ -325,6 +356,7 @@ def main():
     )
     
     args = parser.parse_args()
+
     train(
         seed=args.seed,
         num_tasks=args.num_tasks,

@@ -57,9 +57,10 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.5
+        self.percent_winner = 0.2
+        self.percent_common = 0.1
         self.percent_winner_last_layer = 1 / num_tasks
-        
+
         # self.layers = nn.ModuleList(
         #     [
         #         nn.Conv2d(3, 32, kernel_size=3, padding=1),
@@ -97,97 +98,6 @@ class NN(nn.Module):
         )
         
         elif data == "cifar10":
-            # self.layers = nn.ModuleList(
-            #     [
-            #         nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(64),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(64),
-            #         nn.ReLU(inplace=True),
-                    
-            #         nn.MaxPool2d(kernel_size=2, stride=2),
-                    
-            #         nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(128),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(128),
-            #         nn.ReLU(inplace=True),
-                    
-            #         nn.MaxPool2d(kernel_size=2, stride=2),
-                    
-            #         nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(256),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(256),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(256),
-            #         nn.ReLU(inplace=True),
-                    
-            #         nn.MaxPool2d(kernel_size=2, stride=2),
-                    
-            #         nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(512),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(512),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(512),
-            #         nn.ReLU(inplace=True),
-                    
-            #         nn.MaxPool2d(kernel_size=2, stride=2),
-                    
-            #         nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(512),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(512),
-            #         nn.ReLU(inplace=True),
-            #         nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            #         nn.BatchNorm2d(512),
-            #         nn.ReLU(inplace=True),
-                    
-            #         nn.MaxPool2d(kernel_size=2, stride=2),
-            #         nn.MaxPool2d(kernel_size=1, stride=1),
-                    
-            #         nn.Flatten(),
-            #         nn.Linear(input_size, output_size),
-                    
-                    
-                    
-            #         # nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.MaxPool2d(kernel_size=2, stride=2),
-            #         # nn.Dropout(p=0.3),
-                    
-            #         # nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.Conv2d(512, 512, kernel_size=3, padding=1),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.Conv2d(512, 256, kernel_size=3, padding=1),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.MaxPool2d(kernel_size=2, stride=2),
-            #         # nn.Dropout(p=0.3),
-                    
-            #         # nn.Flatten(),
-            #         # nn.Linear(input_size, 512),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.Dropout(p=0.5),
-            #         # nn.Linear(512, 256),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.Dropout(p=0.5),
-            #         # nn.Linear(256, 128),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.Dropout(p=0.5),
-            #         # nn.Linear(128, output_size),
-            #         # nn.ReLU(inplace=True),
-            #         # nn.Dropout(p=0.5),
-            #     ]
-            # )
             self.layers = nn.ModuleList([
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -217,8 +127,58 @@ class NN(nn.Module):
             nn.ReLU(),
             nn.Linear(512, 10)
             ])
+        
+        elif data == "cifar100":
+            self.layers = nn.ModuleList()
+            self.in_channels = 64
+
+            # Initial convolution
+            self.layers.append(nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False))
+            self.layers.append(nn.BatchNorm2d(64))
+            self.layers.append(nn.ReLU(inplace=True))
+
+            # Residual blocks: (out_channels, num_blocks, stride)
+            self._make_layer(64, 2, stride=1)
+            self._make_layer(128, 2, stride=2)
+            self._make_layer(256, 2, stride=2)
+            self._make_layer(512, 2, stride=2)
+
+            self.layers.append(nn.AdaptiveAvgPool2d((1, 1)))
+            self.layers.append(nn.Flatten())
+            self.layers.append(nn.Linear(512, output_size))
             
         self.indexes = indexes
+        
+    def _make_layer(self, out_channels, blocks, stride):
+        for block_idx in range(blocks):
+            stride_block = stride if block_idx == 0 else 1
+
+            # Downsample if needed
+            if stride_block != 1 or self.in_channels != out_channels:
+                self.layers.append(nn.Conv2d(self.in_channels, out_channels, kernel_size=1,
+                                             stride=stride_block, bias=False))  # downsample
+                self.layers.append(nn.BatchNorm2d(out_channels))
+                downsample = True
+                self.in_channels = out_channels
+            else:
+                downsample = False
+
+            # Main conv1
+            self.layers.append(nn.Conv2d(self.in_channels, out_channels, kernel_size=3,
+                                         stride=stride_block, padding=1, bias=False))
+            self.layers.append(nn.BatchNorm2d(out_channels))
+            self.layers.append(nn.ReLU(inplace=True))
+
+            # conv2
+            self.layers.append(nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                                         stride=1, padding=1, bias=False))
+            self.layers.append(nn.BatchNorm2d(out_channels))
+
+            if downsample:
+                self.layers.append(nn.Identity())  # placeholder to know skip connection is needed
+
+            self.layers.append(nn.ReLU(inplace=True))  # After skip connection
+            self.in_channels = out_channels
 
     def forward(self, x, scalers=None, indexes=None, masks=None, indices_old=None, target=None, selection_method="hebbian"):
         """
@@ -244,6 +204,7 @@ class NN(nn.Module):
         common_indices = []
         
         idx = 0
+        skip_connections = None
         
         for i, layer in enumerate(self.layers):
             is_final_layer = (i == len(self.layers) - 1)
@@ -286,7 +247,18 @@ class NN(nn.Module):
                 hebbian_indices.append(hebbian_index)
                 if common_index is not None:
                     common_indices.append(common_index)
+                    
+            elif isinstance(layer, nn.BatchNorm2d) or isinstance(layer, nn.ReLU):
+                x1 = layer(x)
+                
+            elif isinstance(layer, nn.Identity):
+                skip_connections = x
+                
             else:
+                if skip_connections is not None:
+                    x = x + skip_connections
+                    skip_connections = None
+                
                 x1 = layer(x)
                     
             x = x1
@@ -368,8 +340,8 @@ class NN(nn.Module):
                 if indices_old is not None:
                     common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_indices]
-                    if len(common_indices) > int(0.5 * num_winners):
-                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(0.5*num_winners)], float('-inf'))
+                    if len(common_indices) > int(self.percent_common * num_winners):
+                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(self.percent_common*num_winners)], float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                     else:
                         hebbian_scores = hebbian_scores.scatter(0, common_indices, float('-inf'))
@@ -609,7 +581,7 @@ class NN(nn.Module):
                     common_mask = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_mask]
                     # Optional: Reselect if too much overlap (like original code)
-                    max_common = int(0.5 * num_winners)
+                    max_common = int(self.percent_common * num_winners)
                     if common_indices.numel() > max_common:
                         eligible_scores.scatter_(0, common_indices[:max_common], float('-inf')) # Penalize only some common ones
                         actual_k = min(num_winners, (eligible_scores > -math.inf).sum().item())
