@@ -22,7 +22,7 @@ from data import (
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
 import argparse
-
+import numpy as np
 
 # seed = 10  # verified
 
@@ -252,6 +252,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 task_acc.append(100 * correct / len(test_loader.dataset))
                 
             task_accuracies.append(np.mean(task_acc))
+            print("Task Accuracies: ", task_accuracies)
 
         accuracies = []
         task_model.eval()
