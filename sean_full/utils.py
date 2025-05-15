@@ -161,7 +161,13 @@ def forwardprop_and_backprop(
             indices_old = [None] * len(list_of_indexes)
 
             output, scalers, list_of_indexes, masks, common_indices = model(
-                data, scalers, indexes=list_of_indexes, masks=masks, indices_old = indices_old, target=one_hot_target, selection_method="hebbian",
+                data, 
+                scalers, 
+                indexes=list_of_indexes, 
+                masks=masks, 
+                indices_old = indices_old, 
+                target=one_hot_target, 
+                selection_method="hebbian",
             )
 
         else:
