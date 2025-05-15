@@ -17,6 +17,7 @@ from data import (
     get_domain_inc_data,
     get_cifar10_data,
     get_cifar100_data,
+    get_pMNIST_data,
 )
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
@@ -44,6 +45,12 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         all_train_loaders, all_test_loaders = get_cifar100_data(
             batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
         )
+        
+    elif data_type == "pmnist":
+        all_train_loaders, all_test_loaders = get_pMNIST_data(
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
+        )
+        
     else:
         raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10', or 'cifar100'.")
     
@@ -57,8 +64,8 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         torch.cuda.manual_seed_all(seed)
 
         # layer_sizes = [32, 64, 128, 256, 256, 1024, 512, output_size]
-        if data_type == "mnist":
-            layer_sizes = [256, 128, 64, output_size]
+        if data_type == "mnist" or data_type == "pmnist":
+            layer_sizes = [256, 128, 64]
         elif data_type == "cifar10":
             # layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
             # layer_sizes = [32, 64, 128,128, 256, 256, 1024, 512, output_size]
@@ -182,7 +189,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             task_masks = masks
             
             
-            if frozen_neurons > 80.0 and data_type == "mnist":
+            if frozen_neurons > 80.0 and data_type == "mnist" or data_type == "pmnist":
                 layer_sizes_new = task_model.grow_layers()
                 task_model.to(device)
                 task_masks = [
@@ -220,7 +227,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             test_loader = all_test_loaders[t]
             print("### Testing Task ", t + 1, " ###")
             for i, (data, target) in enumerate(test_loader):
-                if data_type == "mnist":
+                if data_type == "mnist" or data_type == "pmnist":
                     data = data.view(-1, 28 * 28).to(device)
                 elif data_type == "cifar10" or data_type == "cifar100":
                     data = data.view(-1, 3, 32, 32).to(device)
@@ -291,7 +298,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
             test_loader = all_test_loaders[t]
             print("### Testing Task ", t + 1, " ###")
             for i, (data, target) in enumerate(test_loader):
-                if data_type == "mnist":
+                if data_type == "mnist" or data_type == "pmnist":
                     data = data.view(-1, 28 * 28).to(device)
                 elif data_type == "cifar10" or data_type == "cifar100":
                     data = data.view(-1, 3, 32, 32).to(device)
@@ -347,17 +354,38 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
     import numpy as np
     import matplotlib.pyplot as plt
 
-    # Plot the accuracies
+    # # Plot the accuracies
+    # plt.figure(figsize=(10, 5))
+    # # bar plot
+    # plt.bar(np.arange(len(accuracies)), accuracies.cpu().numpy(), color="blue", alpha=0.7)
+    # plt.xticks(np.arange(len(accuracies)), [f"Task {i+1}" for i in range(len(accuracies))])
+    # plt.xlabel("Tasks")
+    # plt.ylabel("Accuracy")
+    # plt.title("Task-wise Accuracy")
+    # plt.ylim(0, 100)
+    # plt.grid(axis="y")
+    # plt.show()
+    
+    print(accuracies)
+    
+    #plot avg_acc vs tasks
+    avg_accs = []
     plt.figure(figsize=(10, 5))
-    # bar plot
-    plt.bar(np.arange(len(accuracies)), accuracies.cpu().numpy(), color="blue", alpha=0.7)
-    plt.xticks(np.arange(len(accuracies)), [f"Task {i+1}" for i in range(len(accuracies))])
+    for i in range(len(accuracies)):
+        avg_accs.append(torch.mean(all_accuracies[: i]).item())
+    
+    print("Average Accuracies: ", avg_accs)
+    plt.plot(np.arange(len(avg_accs)), avg_accs, marker='o', color='blue', alpha=0.7)
+    plt.xticks(np.arange(len(avg_accs)), [f"Task {i+1}" for i in range(len(avg_accs))])
     plt.xlabel("Tasks")
-    plt.ylabel("Accuracy")
-    plt.title("Task-wise Accuracy")
+    plt.ylabel("Average Accuracy")
+    plt.title("Average Accuracy over Tasks")
     plt.ylim(0, 100)
     plt.grid(axis="y")
+    plt.savefig("avg_accuracy_over_tasks.png")
     plt.show()
+
+        
     
     # plot_activation_masks(all_masks, 0)
     

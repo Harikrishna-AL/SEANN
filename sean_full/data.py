@@ -1,6 +1,7 @@
 import torchvision
 import torch
 from torchvision import transforms
+import numpy as np
 
 
 # import NMIST data
@@ -136,6 +137,52 @@ def get_cifar100_data(batch_size=128, max_classes=100, num_tasks=20, imbalance=F
 
     return all_train_data, all_test_data
 
+
+def get_pMNIST_data(batch_size=128, max_classes=10, num_tasks=2):
+    all_train_data = []
+    all_test_data = []
+    seed = 42  # Fixed seed for reproducibility
+    
+    rng = np.random.RandomState(seed)
+    all_permutations = [rng.permutation(28*28) for _ in range(num_tasks)]
+    
+    for t in range(num_tasks):
+        perm = all_permutations[t]
+        
+        def permute(x):
+            x = x.view(-1)[perm]
+            return x.view(1, 28, 28)
+            
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(permute),
+        ])
+        
+        train_data = torchvision.datasets.MNIST(
+        root="../../data",
+        train=True,
+        download=True,
+        transform=transform
+        )
+        test_data = torchvision.datasets.MNIST(
+            root="../../data",
+            train=False,
+            download=True,
+            transform=transform,
+        )
+        
+
+        train_loader = torch.utils.data.DataLoader(
+            train_data, batch_size=batch_size, shuffle=True, drop_last=True
+        )
+        test_loader = torch.utils.data.DataLoader(
+            test_data, batch_size=batch_size, shuffle=False, drop_last=True
+        )
+
+        all_train_data.append(train_loader)
+        all_test_data.append(test_loader)
+        
+    return all_train_data, all_test_data
 
 # make a function that gives a mnist dataloader that gives a continous data of only classes 0-4 and after that 5-9
 def get_data_separate(batch_size=128, num_tasks=2, max_classes=10):

@@ -57,7 +57,7 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.2
+        self.percent_winner = 1.0
         self.percent_common = 0.0
         self.percent_winner_last_layer = 1 / num_tasks
 
@@ -84,7 +84,7 @@ class NN(nn.Module):
         #         nn.Linear(512, output_size),
         #     ]
         # )
-        if data == "mnist":
+        if data == "mnist" or data == "pmnist":
             self.layers = nn.ModuleList(
             [
                 nn.Linear(input_size, 256),
@@ -251,58 +251,61 @@ class NN(nn.Module):
         
         for i, layer in enumerate(self.layers):
             is_final_layer = (i == len(self.layers) - 1)
-            if isinstance(layer, nn.Conv2d):
-                x1 = layer(x)
-                if masks is not None:
-                    x1 = torch.mul(x1, masks[idx].view(1, -1, 1, 1))
-                
-                if selection_method == "hebbian":
-                    hebbian_score, hebbian_index, hebbian_mask, common_index = self._calculate_hebbian_conv(
-                        x, x1, i, indices_old=indices_old[idx]
-                    )
-                else:
-                    raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
-                
-                idx += 1
-                
-                hebbian_scores.append(hebbian_score)
-                hebbian_masks.append(hebbian_mask)
-                hebbian_indices.append(hebbian_index)
-                if common_index is not None:
-                    common_indices.append(common_index)
-                
+            if i < len(self.layers) - 2:
+                if isinstance(layer, nn.Conv2d):
+                    x1 = layer(x)
+                    if masks is not None:
+                        x1 = torch.mul(x1, masks[idx].view(1, -1, 1, 1))
                     
-            if isinstance(layer, nn.Linear):
-                x1 = layer(x)
-                if masks is not None:
-                    x1 = torch.mul(x1, masks[idx])
-            
-                if selection_method == "hebbian":
-                    hebbian_score, hebbian_index, hebbian_mask, common_index = self.hebbian_update(
-                        x, x1, i, indices_old=indices_old[idx], target=target if is_final_layer else None
-                    )
-                else:
-                    raise ValueError("Invalid selection method. Choose 'hebbian'")
-                idx += 1
-                
-                hebbian_scores.append(hebbian_score)
-                hebbian_masks.append(hebbian_mask)
-                hebbian_indices.append(hebbian_index)
-                if common_index is not None:
-                    common_indices.append(common_index)
+                    if selection_method == "hebbian":
+                        hebbian_score, hebbian_index, hebbian_mask, common_index = self._calculate_hebbian_conv(
+                            x, x1, i, indices_old=indices_old[idx]
+                        )
+                    else:
+                        raise ValueError("Invalid selection method. Choose 'hebbian' or 'random'.")
                     
-            if isinstance(layer, (nn.BatchNorm2d, nn.ReLU, nn.MaxPool2d, nn.Dropout, nn.Flatten)):
+                    idx += 1
+                    
+                    hebbian_scores.append(hebbian_score)
+                    hebbian_masks.append(hebbian_mask)
+                    hebbian_indices.append(hebbian_index)
+                    if common_index is not None:
+                        common_indices.append(common_index)
+                    
+                        
+                if isinstance(layer, nn.Linear):
+                    x1 = layer(x)
+                    if masks is not None:
+                        x1 = torch.mul(x1, masks[idx])
+                
+                    if selection_method == "hebbian":
+                        hebbian_score, hebbian_index, hebbian_mask, common_index = self.hebbian_update(
+                            x, x1, i, indices_old=indices_old[idx], target=target if is_final_layer else None
+                        )
+                    else:
+                        raise ValueError("Invalid selection method. Choose 'hebbian'")
+                    idx += 1
+                    
+                    hebbian_scores.append(hebbian_score)
+                    hebbian_masks.append(hebbian_mask)
+                    hebbian_indices.append(hebbian_index)
+                    if common_index is not None:
+                        common_indices.append(common_index)
+                        
+                if isinstance(layer, (nn.BatchNorm2d, nn.ReLU, nn.MaxPool2d, nn.Dropout, nn.Flatten)):
+                    x1 = layer(x)
+                    
+                # elif isinstance(layer, nn.Identity):
+                #     skip_connections = x1
+                    
+                # else:
+                #     if skip_connections is not None:
+                #         x1 = x1 + skip_connections
+                #         skip_connections = None
+                    
+                #     x1 = layer(x)
+            else:
                 x1 = layer(x)
-                
-            # elif isinstance(layer, nn.Identity):
-            #     skip_connections = x1
-                
-            # else:
-            #     if skip_connections is not None:
-            #         x1 = x1 + skip_connections
-            #         skip_connections = None
-                
-            #     x1 = layer(x)
                     
             x = x1
             
@@ -749,12 +752,13 @@ class NN(nn.Module):
 
         idx = 0
         for i, layer in enumerate(self.layers):
-            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
-                
-                if layer.weight._backward_hooks is not None:
-                    layer.weight._backward_hooks.clear()
-                layer.weight.register_hook(self.scale_grad(indexes[idx]))
-                idx += 1
+            if i < len(self.layers) - 2:
+                if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
+                    
+                    if layer.weight._backward_hooks is not None:
+                        layer.weight._backward_hooks.clear()
+                    layer.weight.register_hook(self.scale_grad(indexes[idx]))
+                    idx += 1
 
     def update_indexes(self, new_indexes):
         """
@@ -843,7 +847,7 @@ class NN(nn.Module):
                 new_l.weight.data[:, :orig_in] = layer.weight.data
                 new_l.bias.data[:]             = layer.bias.data
                 
-                new_hidden_sizes.append(new_out)
+                # new_hidden_sizes.append(new_out)
 
             new_linear.append(new_l)
             # new_hebb.append(new_h)
