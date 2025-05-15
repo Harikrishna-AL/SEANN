@@ -130,26 +130,37 @@ class NN(nn.Module):
             self.layers = nn.ModuleList([
                 
             nn.Conv2d(3, 64, kernel_size=3, padding=1),  # 32x32x64
-            nn.BatchNorm2d(64),
+            # nn.BatchNorm2d(64),
+            nn.GroupNorm(num_groups=16,num_channels=64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1), # 32x32x64
-            nn.BatchNorm2d(64),
+            # nn.BatchNorm2d(64),
+            # nn.LayerNorm(64),
+            nn.GroupNorm(num_groups=16,num_channels=64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),                             # 16x16x64
 
             nn.Conv2d(64, 128, kernel_size=3, padding=1),# 16x16x128
-            nn.BatchNorm2d(128),
+            # nn.BatchNorm2d(128),
+            # nn.LayerNorm(128),
+            nn.GroupNorm(num_groups=16,num_channels=128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 128, kernel_size=3, padding=1),# 16x16x128
-            nn.BatchNorm2d(128),
+            # nn.BatchNorm2d(128),
+            # nn.LayerNorm(128),
+            nn.GroupNorm(num_groups=16,num_channels=128),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),                             # 8x8x128
 
             nn.Conv2d(128, 256, kernel_size=3, padding=1),# 8x8x256
-            nn.BatchNorm2d(256),
+            # nn.BatchNorm2d(256),
+            # nn.LayerNorm(256),
+            nn.GroupNorm(num_groups=16,num_channels=256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),# 8x8x256
-            nn.BatchNorm2d(256),
+            # nn.BatchNorm2d(256),
+            # nn.LayerNorm(256),
+            nn.GroupNorm(num_groups=16,num_channels=256),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),                             # 4x4x256
             nn.Flatten(),
@@ -576,7 +587,7 @@ class NN(nn.Module):
         delta_w_flat = lr * (y_x_approx - lateral_term_flat) # Use if calculating delta_w
 
         # --- Use weight norm as score (Simpler Option) ---
-        modified_weights_flat = current_weights_flat # If not calculating delta_w
+        # modified_weights_flat = current_weights_flat # If not calculating delta_w
         # If calculating delta_w:
         delta_w_flat = lr * (y_x_approx - lateral_term_flat) # Example delta_w
         modified_weights_flat = current_weights_flat + delta_w_flat
@@ -589,9 +600,9 @@ class NN(nn.Module):
         norm = torch.clamp(norm, min=1e-8)
         normalized_modified_weights_flat = modified_weights_flat / norm
         # --- Use normalized *current* weights for the scale tensor (simplification) ---
-        norm = torch.norm(current_weights_flat, p=2, dim=1, keepdim=True)
-        norm = torch.clamp(norm, min=1e-8)
-        normalized_current_weights_flat = current_weights_flat / norm
+        # norm = torch.norm(current_weights_flat, p=2, dim=1, keepdim=True)
+        # norm = torch.clamp(norm, min=1e-8)
+        # normalized_current_weights_flat = current_weights_flat / norm
 
 
         # --- Select top K based on Hebbian scores ---
@@ -658,8 +669,8 @@ class NN(nn.Module):
         scale = torch.zeros_like(gd_layer.weight.data)
         if topk_indices_hebbian.numel() > 0:
             # Use normalized *current* weights for winners (simplification)
-            winners_normalized_weights = normalized_current_weights_flat[topk_indices_hebbian].view(-1, in_channels, kH, kW)
-            scale[topk_indices_hebbian] = winners_normalized_weights
+            # winners_normalized_weights = normalized_current_weights_flat[topk_indices_hebbian].view(-1, in_channels, kH, kW)
+            # scale[topk_indices_hebbian] = winners_normalized_weights
             # If using delta_w:
             winners_normalized_weights = normalized_modified_weights_flat[topk_indices_hebbian].view(-1, in_channels, kH, kW)
             scale[topk_indices_hebbian] = winners_normalized_weights
