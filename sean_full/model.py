@@ -791,7 +791,7 @@ class NN(nn.Module):
         then rebuild the final layer so its input_dim matches the new size
         (but its output_dim stays unchanged).
         """
-
+        layer_sizes = [256, 128, 64]
         new_linear      = nn.ModuleList()
         new_hidden_sizes = []
 
@@ -808,7 +808,7 @@ class NN(nn.Module):
                     out_size  = layer.out_features
                     orig_in   = layer.in_features
                     
-                    num_top = max(int(growth_percent * out_size), 1)
+                    num_top = max(int(growth_percent * layer_sizes[i]), 1)
                     scores = torch.norm(layer.weight.data, p=2, dim=1)
                     topk = torch.topk(scores, num_top).indices
 
