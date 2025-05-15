@@ -58,6 +58,7 @@ class NN(nn.Module):
         self.k = 5
         self.inhibition_strength = inhibition_strength
         self.percent_winner = 0.5
+        self.percent_common = 0.3
         self.percent_winner_last_layer = 1 / num_tasks
         
         # self.layers = nn.ModuleList(
