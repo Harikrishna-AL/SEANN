@@ -799,6 +799,7 @@ class NN(nn.Module):
         prev_size = self.layers[0].in_features  # e.g. 784
 
         L = len(self.layers)
+        idx = 0
         for i, layer in enumerate(self.layers):
             
 
@@ -808,7 +809,7 @@ class NN(nn.Module):
                     out_size  = layer.out_features
                     orig_in   = layer.in_features
                     
-                    num_top = max(int(growth_percent * layer_sizes[i]), 1)
+                    num_top = max(int(growth_percent * layer_sizes[idx]), 1)
                     scores = torch.norm(layer.weight.data, p=2, dim=1)
                     topk = torch.topk(scores, num_top).indices
 
@@ -830,6 +831,8 @@ class NN(nn.Module):
 
                     prev_size = new_out  # next layer’s input size
                     new_hidden_sizes.append(new_out)
+                    
+                    idx += 1
                 else:
                     new_l = layer
 
