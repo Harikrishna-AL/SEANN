@@ -365,14 +365,19 @@ class NN(nn.Module):
 
             if num_winners > 0:
                 _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners) # Shape: (num_winners)
+                
                 if indices_old is not None:
                     common_indices = torch.isin(topk_indices_hebbian, indices_old.long())
                     common_indices = topk_indices_hebbian[common_indices]
-                    if len(common_indices) > int(0.5 * num_winners):
-                        hebbian_scores = hebbian_scores.scatter(0, common_indices[:int(0.5*num_winners)], float('-inf'))
+                    
+                    if len(common_indices) > int(self.percent_common * num_winners):
+                        common_indices = common_indices[:int(self.percent_common * num_winners)]
+                        indices_old = indices_old[~torch.isin(indices_old, common_indices)]
+                        hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                     else:
-                        hebbian_scores = hebbian_scores.scatter(0, common_indices, float('-inf'))
+                        indices_old = indices_old[~torch.isin(indices_old, common_indices)]
+                        hebbian_scores = hebbian_scores.scatter(0, indices_old.long(), float('-inf'))
                         _, topk_indices_hebbian = torch.topk(hebbian_scores, num_winners, largest=True, sorted=False)
                         
                          
