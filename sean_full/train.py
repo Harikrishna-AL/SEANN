@@ -31,6 +31,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device: ", device)
     
+    task_accuracies = []
     
     if data_type == "mnist":
         all_train_loaders, all_test_loaders = get_data_separate(
@@ -224,27 +225,33 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                     prev_parameters_list[i] = layer.weight.data.clone()
             
             correct = 0
-            test_loader = all_test_loaders[t]
-            print("### Testing Task ", t + 1, " ###")
-            for i, (data, target) in enumerate(test_loader):
-                if data_type == "mnist" or data_type == "pmnist":
-                    data = data.view(-1, 28 * 28).to(device)
-                elif data_type == "cifar10" or data_type == "cifar100":
-                    data = data.view(-1, 3, 32, 32).to(device)
+            
+            for q in range(0, t+1):
+                task_acc = []
+                test_loader = all_test_loaders[t]
+                print("### Testing Task ", q + 1, " ###")
+                for i, (data, target) in enumerate(test_loader):
+                    if data_type == "mnist" or data_type == "pmnist":
+                        data = data.view(-1, 28 * 28).to(device)
+                    elif data_type == "cifar10" or data_type == "cifar100":
+                        data = data.view(-1, 3, 32, 32).to(device)
 
-                else:
-                    raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10'")
-                target = target.to(device)
-                output, scalers, indices, masks, _ = task_model(
-                    data, masks=all_masks[t], indices_old=[None] * len(masks)
+                    else:
+                        raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10'")
+                    target = target.to(device)
+                    output, scalers, indices, masks, _ = task_model(
+                        data, masks=all_masks[q], indices_old=[None] * len(masks)
+                    )
+
+                    # check the accuracy
+                    predicted = output.argmax(dim=1, keepdim=True)
+                    correct += predicted.eq(target.view_as(predicted)).sum().item()
+                print(
+                    f"Training Accuracy for Task {q + 1}: {100 * correct / len(test_loader.dataset):.2f}%"
                 )
-
-                # check the accuracy
-                predicted = output.argmax(dim=1, keepdim=True)
-                correct += predicted.eq(target.view_as(predicted)).sum().item()
-            print(
-                f"Training Accuracy for Task {t + 1}: {100 * correct / len(test_loader.dataset):.2f}%"
-            )
+                task_acc.append(100 * correct / len(test_loader.dataset))
+                
+            task_accuracies.append(np.mean(task_acc))
 
         accuracies = []
         task_model.eval()
@@ -367,6 +374,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
     # plt.show()
     
     print(accuracies)
+    print(task_accuracies)
     
     #plot avg_acc vs tasks
     avg_accs = []
@@ -375,13 +383,13 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         avg_accs.append(torch.mean(all_accuracies[: i]).item())
     
     print("Average Accuracies: ", avg_accs)
-    plt.plot(np.arange(len(avg_accs)), avg_accs, marker='o', color='blue', alpha=0.7)
-    plt.xticks(np.arange(len(avg_accs)), [f"Task {i+1}" for i in range(len(avg_accs))])
+    plt.plot(np.arange(len(task_accuracies)), task_accuracies, marker='o', color='blue', alpha=0.7)
+    plt.xticks(np.arange(len(task_accuracies)), [f"{i+1}" for i in range(len(task_accuracies))])
     plt.xlabel("Tasks")
     plt.ylabel("Average Accuracy")
     plt.title("Average Accuracy over Tasks")
     plt.ylim(0, 100)
-    plt.grid(axis="y")
+    plt.grid()
     plt.savefig("avg_accuracy_over_tasks.png")
     plt.show()
 
@@ -619,3 +627,10 @@ if __name__ == "__main__":
 #     plt.axis("off")
 
 # plt.show()
+
+"""
+tensor([68.2700, 77.5000, 81.8800, 87.8700, 91.2700, 93.8100, 95.2100, 96.0200,
+        96.5400, 96.5000, 96.5200, 96.5800, 96.6800, 96.7200, 96.8300, 96.8900,
+        96.9800, 97.0300, 97.0500, 97.0300], device='cuda:0')
+Average Accuracies:  [nan, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125, 92.65899658203125]
+"""
