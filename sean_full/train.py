@@ -224,10 +224,11 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 ) and i < len(prev_parameters) - 1:
                     prev_parameters_list[i] = layer.weight.data.clone()
             
-            correct = 0
             
+            task_acc = []
             for q in range(0, t+1):
-                task_acc = []
+                correct = 0
+                
                 test_loader = all_test_loaders[t]
                 print("### Testing Task ", q + 1, " ###")
                 for i, (data, target) in enumerate(test_loader):
@@ -251,7 +252,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 )
                 task_acc.append(100 * correct / len(test_loader.dataset))
                 
-            task_accuracies.append(np.mean(task_acc))
+            task_accuracies.append(sum(task_acc) / len(task_acc))
             print("Task Accuracies: ", task_accuracies)
 
         accuracies = []
