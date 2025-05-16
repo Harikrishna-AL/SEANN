@@ -57,7 +57,7 @@ class NN(nn.Module):
 
         self.k = 5
         self.inhibition_strength = inhibition_strength
-        self.percent_winner = 0.5
+        self.percent_winner = 0.2
         self.percent_common = 0.3
         self.percent_winner_last_layer = 1 / num_tasks
         
@@ -84,7 +84,7 @@ class NN(nn.Module):
         #         nn.Linear(512, output_size),
         #     ]
         # )
-        if data == "mnist":
+        if data == "mnist" or data == "fashionmnist":
             self.layers = nn.ModuleList(
             [
                 nn.Linear(input_size, 256),
@@ -97,6 +97,18 @@ class NN(nn.Module):
             ]
         )
         
+        elif data == "emnist":
+            self.layers = nn.ModuleList(
+            [
+                nn.Linear(input_size, 1000),  # First hidden layer: 1000 units
+                nn.ReLU(),
+                nn.Linear(1000, 500),         # Second hidden layer: 500 units
+                nn.ReLU(),
+                nn.Linear(500, output_size)      # Output layer
+            ]
+        )
+            
+
         elif data == "cifar10":
             # self.layers = nn.ModuleList(
             #     [

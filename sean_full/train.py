@@ -18,6 +18,8 @@ from data import (
     get_domain_inc_data,
     get_cifar10_data,
     get_cifar100_data,
+    get_EMNIST_tasks,
+    get_FashionMNIST_tasks
 )
 from tqdm import tqdm
 from torch.optim.lr_scheduler import StepLR
@@ -45,6 +47,14 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         all_train_loaders, all_test_loaders = get_cifar100_data(
             batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
         )
+    elif data_type == "emnist":
+        all_train_loaders, all_test_loaders = get_EMNIST_tasks(
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
+        )
+    elif data_type == "fashionmnist":
+        all_train_loaders, all_test_loaders = get_FashionMNIST_tasks(
+            batch_size=batch_size, num_tasks=num_tasks, max_classes=output_size
+        )
     else:
         raise ValueError("Invalid data type. Choose from 'mnist', 'cifar10', or 'cifar100'.")
     
@@ -63,6 +73,10 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
         elif data_type == "cifar10":
             # layer_sizes = [64, 64, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, output_size]
             layer_sizes = [32, 64, 128,128, 256, 256, 1024, 512, output_size]
+        elif data_type == "emnist":
+            layer_sizes = [1000, 500, output_size]
+        elif data_type == "fashionmnist":
+            layer_sizes = [256, 128, 64, output_size]
             
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -190,7 +204,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 correct = 0
                 total = 0
                 for data, target in all_test_loaders[j]:
-                    if data_type == "mnist":
+                    if data_type == "mnist" or data_type == "fashionmnist" or data_type == "emnist":
                         data = data.view(-1, 28 * 28).to(device)
                     elif data_type == "cifar10":
                         data = data.view(-1, 3, 32, 32).to(device)
@@ -228,7 +242,7 @@ def train(seed, num_tasks=2, batch_size=128, data_type="mnist", output_size=10, 
                 correct = 0
                 total = 0
                 for data, target in all_test_loaders[t + 1]:
-                    data = data.view(data.size(0), -1).to(device) if data_type == "mnist" else data.to(device)
+                    data = data.view(data.size(0), -1).to(device) if (data_type == "mnist" or data_type == "fashionmnist" or data_type == "emnist") else data.to(device)
                     target = target.to(device)
                     output, _, _, _, _ = task_model(data, masks=task_masks_next, indices_old=[None]*len(task_masks_next))
                     pred = output.argmax(dim=1)

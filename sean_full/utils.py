@@ -149,7 +149,7 @@ def forwardprop_and_backprop(
     
     for i, (data, target) in enumerate(tqdm(data_loader)):
         optimizer.zero_grad()
-        if data_type == "mnist":
+        if data_type == "mnist" or data_type == "fashionmnist" or data_type == "emnist":
             data = data.view(-1, 28 * 28).to(device)
         elif data_type == "cifar10":
             data = data.view(-1, 3, 32, 32).to(device)
